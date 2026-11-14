@@ -12,6 +12,6 @@
   },
   "setupFiles": [
     "dotenv/config",
-    "<rootDir>/test/setup-queue-prefix.ts"
+    "<rootDir>/setup-queue-prefix.ts"
   ]
 }

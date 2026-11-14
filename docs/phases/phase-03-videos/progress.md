@@ -1,7 +1,7 @@
 # phase-03-videos — Progress
 
 **Status:** in_progress
-**SIs:** 3/13 completed
+**SIs:** 4/13 completed
 
 ### SI-03.1 — Infraestrutura base: dependências, FFmpeg, Redis e storage no Compose
 - **Status:** completed
@@ -26,9 +26,16 @@
   - Baseline lint debt found before any phase code: `npm run lint` reports 157 errors in files from phases 01/02 (mostly `no-unsafe-*` on `any` values from supertest/Jest in tests, plus `channels.service.ts` and `create-test-data-source.ts`). The Definition of Done requires lint to pass, so it is scheduled for SI-03.13 (DoD SI). Files created in this phase are kept lint-clean as they are written.
 
 ### SI-03.4 — Entidade Video, migration e identificador de URL
-- **Status:** pending
-- **Tests:** —
-- **Observations:** none
+- **Status:** completed
+- **Tests:** 8/8 passing (video.entity.integration-spec.ts, url-id.util.spec.ts, migrations.integration-spec.ts); full suites re-run: 165/165 unit+integration, 52/52 e2e
+- **Observations:** 
+  - Migration generated with `npm run migration:generate` (`1794699126435-CreateVideos.ts`) and applied; formatted by `eslint --fix`.
+  - Entity follows the project's snake_case property convention (`user_id`, `created_at` in `Channel`/`User`) instead of camelCase with column-name mapping.
+  - Fixed the baseline migrations test: tables are dropped sequentially and the enum types (`verification_tokens_type_enum`, `videos_status_enum`) are dropped too. Its 'revert last migration' case now targets `CreateVideos`, which is the last migration. With `afterAll` no longer throwing, `npm test` exits normally again (~7 s).
+  - Adding the required inverse side `Channel.videos` means every DataSource that registers `Channel` must also register `Video`: added `Video` to the `ALL_ENTITIES` list of 10 existing test files.
+  - Pulled forward from SI-03.6: a minimal `VideosModule` with `TypeOrmModule.forFeature([Video])`, registered in `AppModule`. Without it `autoLoadEntities` does not load `Video`, so the app (and the e2e suites) fail on the `Channel.videos` relation. SI-03.6 extends this module.
+  - Fix to SI-03.2: `test/jest-e2e.json` has `rootDir` = `test/`, so the setup file path is `<rootDir>/setup-queue-prefix.ts`. The e2e run surfaced it; SI-03.2 had only run the unit config.
+  - Dev database had drifted (baseline migrations test dropped `migrations` while other suites re-created tables via `synchronize`); reset with `DROP SCHEMA public CASCADE` and `migration:run`, as the migrations rule prescribes.
 
 ### SI-03.5 — Exceções de domínio, módulo de fila e produtor de jobs
 - **Status:** pending
