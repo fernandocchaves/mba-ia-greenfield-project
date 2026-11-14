@@ -364,6 +364,9 @@ _Installed stack checked (`nestjs-project/package-lock.json`):_ `@nestjs/common`
 
 **Decision:** B (Internal endpoint + public presign endpoint)
 
+**Revisions:**
+- 2026-11-14 — Key set gains `QUEUE_PREFIX` (BullMQ key prefix; default `streamtube`; the Jest environment uses `streamtube-test`). Rationale: integration/e2e suites share Redis and Postgres with the running Compose stack. Without a separate prefix, the Compose `worker` consumes jobs enqueued by tests and mutates the rows under assertion, so tests become non-deterministic. A distinct prefix isolates test queues while still exercising real Redis.
+
 ---
 
 ## TD-12: Abandoned Upload Cleanup Policy
