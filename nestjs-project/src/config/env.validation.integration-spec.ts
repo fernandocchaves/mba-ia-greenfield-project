@@ -70,7 +70,9 @@ describe('envValidationSchema — storage and queue (phase-03-videos/TD-11)', ()
   });
 
   it('should apply defaults for region, bucket and queue settings', () => {
-    const { value, error } = validate(storageEnv);
+    const result = validate(storageEnv);
+    const error = result.error;
+    const value = result.value as Record<string, unknown>;
     expect(error).toBeUndefined();
     expect(value.STORAGE_REGION).toBe('us-east-1');
     expect(value.STORAGE_BUCKET).toBe('streamtube-videos');

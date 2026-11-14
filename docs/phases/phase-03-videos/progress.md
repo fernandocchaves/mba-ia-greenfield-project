@@ -1,7 +1,7 @@
 # phase-03-videos — Progress
 
 **Status:** in_progress
-**SIs:** 2/13 completed
+**SIs:** 3/13 completed
 
 ### SI-03.1 — Infraestrutura base: dependências, FFmpeg, Redis e storage no Compose
 - **Status:** completed
@@ -19,9 +19,11 @@
   - The base env of `env.validation.integration-spec.ts` gained the three storage keys that are now required; otherwise the pre-existing SWAGGER_ENABLED cases would fail on unrelated validation.
 
 ### SI-03.3 — StorageModule e StorageService (S3-compatível)
-- **Status:** pending
-- **Tests:** —
-- **Observations:** none
+- **Status:** completed
+- **Tests:** 7/7 passing (storage.module.spec.ts, storage.service.integration-spec.ts — real S3-compatible storage from Compose)
+- **Observations:** 
+  - Verified against the real storage: a presigned `UploadPart` URL carries no `x-amz-checksum` parameters and accepts a plain `PUT`; a presigned GET with `Range` returns `206` + `Content-Range`; download URLs return `Content-Disposition: attachment` (quotes and line breaks in filenames are replaced).
+  - Baseline lint debt found before any phase code: `npm run lint` reports 157 errors in files from phases 01/02 (mostly `no-unsafe-*` on `any` values from supertest/Jest in tests, plus `channels.service.ts` and `create-test-data-source.ts`). The Definition of Done requires lint to pass, so it is scheduled for SI-03.13 (DoD SI). Files created in this phase are kept lint-clean as they are written.
 
 ### SI-03.4 — Entidade Video, migration e identificador de URL
 - **Status:** pending
