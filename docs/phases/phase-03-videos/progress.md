@@ -1,7 +1,7 @@
 # phase-03-videos — Progress
 
 **Status:** in_progress
-**SIs:** 1/13 completed
+**SIs:** 2/13 completed
 
 ### SI-03.1 — Infraestrutura base: dependências, FFmpeg, Redis e storage no Compose
 - **Status:** completed
@@ -12,9 +12,11 @@
   - `test:e2e` now runs with `--runInBand`, matching what `nestjs-project/CLAUDE.md` already documented.
 
 ### SI-03.2 — Configuração de storage e fila (namespaces e contrato de env)
-- **Status:** pending
-- **Tests:** —
-- **Observations:** none
+- **Status:** completed
+- **Tests:** 12/12 passing (env.validation.integration-spec.ts)
+- **Observations:** 
+  - `.env.example` had `MAIL_FROM="StreamTube" <noreply@streamtube.com>` with an unquoted `<`, so Docker Compose refused to parse a `.env` copied from it (the failure mode `nestjs-project/CLAUDE.md` warns about). Fixed it to `MAIL_FROM="StreamTube <noreply@streamtube.com>"` because this SI already edits the file.
+  - The base env of `env.validation.integration-spec.ts` gained the three storage keys that are now required; otherwise the pre-existing SWAGGER_ENABLED cases would fail on unrelated validation.
 
 ### SI-03.3 — StorageModule e StorageService (S3-compatível)
 - **Status:** pending
