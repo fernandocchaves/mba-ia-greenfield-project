@@ -325,6 +325,68 @@ _Installed stack checked (`nestjs-project/package-lock.json`):_ `@nestjs/common`
 
 ---
 
+## TD-11: Storage and Queue Environment Contract (internal vs public endpoint)
+
+**Scope:** Repo-wide
+
+**Capability:** Transversal — covers: Serviço de armazenamento de arquivos (vídeos e thumbnails); Serviço de processamento em segundo plano (filas); Upload de vídeos com suporte a arquivos de até 10GB sem impacto na performance; Reprodução via streaming (sem necessidade de download completo); Download do vídeo pelo usuário
+
+**Context:** Raised by validation MD-1. Two processes (API and worker) read storage and queue settings that are also declared in the Joi schema (`src/config/env.validation.ts`), `compose.yaml` and `.env.example`, so the key set is a cross-component contract. There is also a networking constraint. Inside the Compose network the storage is `http://minio:9000` (the project's rule is to always use the service name), but the presigned URLs from TD-04 (upload parts) and TD-08 (playback/download) are used by **clients**. A presigned URL's signature covers the `Host` header, so its host cannot be rewritten after signing. Depends on TD-02, TD-04, TD-08.
+
+**Options:**
+
+### Option A: Single endpoint for everything
+- One `STORAGE_ENDPOINT` used by the server-side operations and by presigning.
+- **Pros:** One variable and one S3 client.
+- **Cons:** In the default Compose setup every presigned URL points at `minio:9000`, which only resolves inside the Docker network. A browser on the host cannot use them, so the upload/playback contract works only for in-network callers.
+
+### Option B: Internal endpoint + public presign endpoint
+- `STORAGE_ENDPOINT` (internal, `http://minio:9000`) is used for server-side operations: create/complete/abort multipart, list parts, get/put objects, bucket bootstrap. `STORAGE_PUBLIC_ENDPOINT` is used **only** to presign the URLs handed to clients (TD-04 parts and TD-08 playback/download), and defaults to `STORAGE_ENDPOINT` when unset. Remaining keys: `STORAGE_REGION`, `STORAGE_ACCESS_KEY`, `STORAGE_SECRET_KEY`, `STORAGE_BUCKET`, `REDIS_HOST`, `REDIS_PORT`.
+- **Pros:** Server traffic stays on the service name, as the project rule requires, while client URLs carry a host the client can reach (e.g., `http://localhost:9000` for a host browser, a CDN/S3 domain in production). With the default (public = internal), in-container callers such as tests and the worker work unchanged. No proxy is needed.
+- **Cons:** Two S3 client instances (internal and presigner) and one more variable to document.
+
+### Option C: Single internal endpoint + reverse proxy rewriting the host
+- Presign with an internal host and put a proxy in front of storage that rewrites the host on the way in.
+- **Pros:** One endpoint in the app.
+- **Cons:** It breaks SigV4 (the signed host differs from the received host) unless the proxy re-signs, and it adds an infrastructure component outside this phase's scope.
+
+**Recommendation:** **Option B**. It is the only option that keeps the "service name as host" rule for server traffic and still produces presigned URLs a client can actually reach. Defaulting the public endpoint to the internal one keeps local tests and the worker working without extra configuration.
+
+**Decision:** _[pending]_
+
+---
+
+## TD-12: Abandoned Upload Cleanup Policy
+
+**Scope:** Backend
+
+**Capability:** Upload de vídeos com suporte a arquivos de até 10GB sem impacto na performance; Pré-cadastro automático do vídeo como rascunho ao iniciar o upload
+
+**Context:** Raised by validation MD-2. A client may start an upload (the draft row and S3 multipart upload are created by TD-04) and never complete it, which leaves up to 10 GB of orphaned parts and a draft with no end state. Storage behavior differs per backend. MinIO-family servers (including the TD-03 image) **do not support** the `AbortIncompleteMultipartUpload` lifecycle element: `PutBucketLifecycleConfiguration` with it returns `400`. Instead they automatically purge multipart uploads older than `api stale_uploads_expiry` (default `24h`). AWS S3 keeps incomplete uploads, which keep incurring storage charges, until a lifecycle rule aborts them. Depends on TD-01, TD-04, TD-10.
+
+**Options:**
+
+### Option A: Rely on storage-native expiry only
+- Local storage purges stale multipart uploads after 24h on its own. In production, an AWS lifecycle rule (`AbortIncompleteMultipartUpload`) is configured as infrastructure. A late `complete` call fails with S3 `NoSuchUpload`, which the API maps to a domain error.
+- **Pros:** No application code. Storage reclaims the bytes.
+- **Cons:** The draft row stays `draft` forever with a dead `upload_id`, so "pré-cadastro como rascunho" has no end state in the database. Production correctness depends on a bucket rule the code never checks, and that rule cannot be exercised locally.
+
+### Option B: Application-driven sweep (repeatable job in the worker)
+- A repeatable queue job (BullMQ job scheduler, every hour) in the worker selects drafts whose `created_at` is older than 24h, calls `AbortMultipartUpload` (ignoring `NoSuchUpload`, since the storage may already have purged it) and marks the row `failed` with `processing_error = 'upload_abandoned'`. Storage-native expiry remains as defense in depth.
+- **Pros:** Portable across MinIO-family and AWS S3. Every draft gets a defined terminal state that is visible in the database, consistent with TD-10. Reuses the queue and worker that already exist (TD-01, TD-05), and it is testable end-to-end against the Compose storage.
+- **Cons:** One more job type and a time-based query to maintain. The 24h window must stay at least as long as the storage's own expiry, or the sweep would abort uploads that the storage still keeps.
+
+### Option C: Explicit cancel endpoint only
+- `DELETE /videos/:id/upload` lets the client abort, and the API calls `AbortMultipartUpload` and removes the draft.
+- **Pros:** Immediate cleanup when the client knows it is giving up.
+- **Cons:** Covers only cooperative clients. A closed tab or crashed client never calls it, which is the main case the policy exists for.
+
+**Recommendation:** **Option B (worker sweep after 24h, `failed` + `upload_abandoned`)**. It gives drafts the defined end state this phase is missing, works identically on the local storage and on AWS S3, and reuses the queue/worker infrastructure instead of depending on a bucket rule the local storage rejects. The 24h threshold matches the storage's default stale-upload expiry.
+
+**Decision:** _[pending]_
+
+---
+
 ## Decisions Summary
 
 | ID | Scope | Decision | Recommendation | Choice |
@@ -339,3 +401,5 @@ _Installed stack checked (`nestjs-project/package-lock.json`):_ `@nestjs/common`
 | TD-08 | Cross-layer | Playback and Download Delivery | JSON presigned URLs (storage serves Range/206) | _[pending]_ |
 | TD-09 | Backend | Access Policy for Playback and Download | Owner-only, 404 for others | _[pending]_ |
 | TD-10 | Backend | Video Status Lifecycle and Failure Handling | Status enum + queue retries, `failed` terminal | _[pending]_ |
+| TD-11 | Repo-wide | Storage and Queue Environment Contract | Internal endpoint + public presign endpoint | _[pending]_ |
+| TD-12 | Backend | Abandoned Upload Cleanup Policy | Worker sweep after 24h → `failed` (`upload_abandoned`) | _[pending]_ |

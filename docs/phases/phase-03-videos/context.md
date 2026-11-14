@@ -3,7 +3,7 @@ kind: phase
 name: phase-03-videos
 sources_mtime:
   docs/project-plan.md: "2026-11-14T18:45:42-03:00"
-  docs/decisions/technical-decisions-phase-03-videos.md: "2026-11-14T19:07:05-03:00"
+  docs/decisions/technical-decisions-phase-03-videos.md: "2026-11-14T19:53:15-03:00"
   docs/phases/phase-01-configuracao-base/context.md: "2026-11-14T18:45:42-03:00"
   docs/phases/phase-02-auth/context.md: "2026-11-14T18:45:42-03:00"
   docs/phases/phase-02-auth-frontend/context.md: "2026-11-14T18:45:42-03:00"
@@ -57,6 +57,8 @@ sources_mtime:
 | phase-03-videos/TD-08 | technical-decisions-phase-03-videos.md | Cross-layer | Playback (Streaming) and Download Delivery | pending | _[pending]_ | — |
 | phase-03-videos/TD-09 | technical-decisions-phase-03-videos.md | Backend | Access Policy for Playback and Download in This Phase | pending | _[pending]_ | — |
 | phase-03-videos/TD-10 | technical-decisions-phase-03-videos.md | Backend | Video Status Lifecycle and Processing-Failure Handling | pending | _[pending]_ | — |
+| phase-03-videos/TD-11 | technical-decisions-phase-03-videos.md | Repo-wide | Storage and Queue Environment Contract (internal vs public endpoint) | pending | _[pending]_ | — |
+| phase-03-videos/TD-12 | technical-decisions-phase-03-videos.md | Backend | Abandoned Upload Cleanup Policy | pending | _[pending]_ | — |
 
 _Source files:_
 
@@ -66,77 +68,19 @@ _Source files:_
 
 | Capability | Covered by |
 |------------|------------|
-| Serviço de armazenamento de arquivos (vídeos e thumbnails) | phase-03-videos/TD-02, phase-03-videos/TD-03 |
-| Serviço de processamento em segundo plano (filas) | phase-03-videos/TD-01, phase-03-videos/TD-05 |
-| Upload de vídeos com suporte a arquivos de até 10GB sem impacto na performance | phase-03-videos/TD-04 |
-| Pré-cadastro automático do vídeo como rascunho ao iniciar o upload | phase-03-videos/TD-04, phase-03-videos/TD-10 |
+| Serviço de armazenamento de arquivos (vídeos e thumbnails) | phase-03-videos/TD-02, phase-03-videos/TD-03, phase-03-videos/TD-11 |
+| Serviço de processamento em segundo plano (filas) | phase-03-videos/TD-01, phase-03-videos/TD-05, phase-03-videos/TD-11 |
+| Upload de vídeos com suporte a arquivos de até 10GB sem impacto na performance | phase-03-videos/TD-04, phase-03-videos/TD-11, phase-03-videos/TD-12 |
+| Pré-cadastro automático do vídeo como rascunho ao iniciar o upload | phase-03-videos/TD-04, phase-03-videos/TD-10, phase-03-videos/TD-12 |
 | Processamento automático do vídeo após upload (extração de duração e metadados) | phase-03-videos/TD-05, phase-03-videos/TD-06, phase-03-videos/TD-10 |
 | Geração automática de thumbnail a partir de um frame do vídeo | phase-03-videos/TD-06 |
 | URL única por vídeo, sem conflito com outros vídeos | phase-03-videos/TD-07 |
-| Reprodução via streaming (sem necessidade de download completo) | phase-03-videos/TD-08, phase-03-videos/TD-09 |
-| Download do vídeo pelo usuário | phase-03-videos/TD-08, phase-03-videos/TD-09 |
+| Reprodução via streaming (sem necessidade de download completo) | phase-03-videos/TD-08, phase-03-videos/TD-09, phase-03-videos/TD-11 |
+| Download do vídeo pelo usuário | phase-03-videos/TD-08, phase-03-videos/TD-09, phase-03-videos/TD-11 |
 
 ## Decisions Detail
 
-### phase-03-videos/TD-01
-
-**Recommendation:** **Option A (BullMQ + Redis)**. Retries with exponential backoff and one-job-per-video deduplication are native features, which is exactly what TD-10 needs. Option B would require building them by hand, and Option C would load the primary database with queue traffic. The extra Redis container is the cost, and it matches the diagram's separate "Message Queue" container.
-
-**Libraries:** —
-
-### phase-03-videos/TD-02
-
-**Recommendation:** **Option A (AWS SDK v3)**. It is the only option that presigns multipart parts as first-class operations and that is portable to AWS S3 without code changes, which is the explicit intent of the "MinIO locally, S3 in production" constraint.
-
-**Libraries:** —
-
-### phase-03-videos/TD-03
-
-**Recommendation:** **Option B (`pgsty/silo`, pinned by digest)**. It is the only option that pulls anonymously today and keeps MinIO's exact behavior and configuration surface, so the brief's "MinIO locally" setup holds with a different image. Option C stays the documented exit path if the fork stops being maintained.
-
-**Libraries:** —
-
-### phase-03-videos/TD-04
-
-**Recommendation:** **Option A (presigned S3 multipart)**. It is the only option in which the API never carries video bytes, which is what "sem impacto na performance" requires. It reuses TD-02's client and matches the diagram, where clients reach storage directly. Server-side `ListParts` keeps the client contract to "upload parts, then call complete".
-
-**Libraries:** —
-
-### phase-03-videos/TD-05
-
-**Recommendation:** **Option A (separate service, same codebase)**. It gets the isolation the diagram asks for without duplicating the domain model, and it scales horizontally through Compose.
-
-**Libraries:** —
-
-### phase-03-videos/TD-06
-
-**Recommendation:** **Option B (spawn system ffprobe/ffmpeg)**. It avoids a deprecated, archived dependency, relies on FFmpeg's stable CLI and JSON contract, and keeps the integration small and testable against the real binary in the container.
-
-**Libraries:** —
-
-### phase-03-videos/TD-07
-
-**Recommendation:** **Option C**. The database constraint turns "sem conflito" into a hard guarantee, the id is short and opaque, and it avoids an ESM-only dependency in a CommonJS build.
-
-**Libraries:** —
-
-### phase-03-videos/TD-08
-
-**Recommendation:** **Option C (JSON presigned URLs)**. It is the only option that works with the bearer-header contract inherited from Phase 02 while keeping playback bytes off the API, as the diagram prescribes. Range/206 comes from S3 itself.
-
-**Libraries:** —
-
-### phase-03-videos/TD-09
-
-**Recommendation:** **Option A (owner-only, 404 for others)**. It is the conservative default while publishing does not exist, and it lets Phase 04 add visibility rules without breaking expectations created here.
-
-**Libraries:** —
-
-### phase-03-videos/TD-10
-
-**Recommendation:** **Option A**. The four-state enum is exactly what the brief asks for (rascunho → processando → pronto/erro), TD-01 provides retries, and permanent failures become visible in the same row without extra tables.
-
-**Libraries:** —
+_No decided current-scope TDs yet — all TDs pending (see Decisions Index)._
 
 ## Inherited Decisions Detail
 
