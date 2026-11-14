@@ -1,7 +1,7 @@
 ---
 scope_type: phase
 related_phases: [3]
-status: pending
+status: decided
 date: 2026-11-14
 scope_description: "Backend foundation for video upload and processing: queue technology, object-storage access and local image, 10GB direct upload, worker deployment, FFmpeg tooling, unique URL ids, playback/download delivery and access, and the video status lifecycle."
 ---
@@ -46,7 +46,9 @@ _Installed stack checked (`nestjs-project/package-lock.json`):_ `@nestjs/common`
 
 **Recommendation:** **Option A (BullMQ + Redis)**. Retries with exponential backoff and one-job-per-video deduplication are native features, which is exactly what TD-10 needs. Option B would require building them by hand, and Option C would load the primary database with queue traffic. The extra Redis container is the cost, and it matches the diagram's separate "Message Queue" container.
 
-**Decision:** _[pending]_
+**Decision:** A (BullMQ + Redis)
+
+**Libraries:** `bullmq@^6.7.6`, `@nestjs/bullmq@^12.0.2`
 
 ---
 
@@ -74,7 +76,9 @@ _Installed stack checked (`nestjs-project/package-lock.json`):_ `@nestjs/common`
 
 **Recommendation:** **Option A (AWS SDK v3)**. It is the only option that presigns multipart parts as first-class operations and that is portable to AWS S3 without code changes, which is the explicit intent of the "MinIO locally, S3 in production" constraint.
 
-**Decision:** _[pending]_
+**Decision:** A (AWS SDK v3)
+
+**Libraries:** `@aws-sdk/client-s3@^3.1169.0`, `@aws-sdk/s3-request-presigner@^3.1169.0`
 
 ---
 
@@ -105,7 +109,7 @@ _Installed stack checked (`nestjs-project/package-lock.json`):_ `@nestjs/common`
 
 **Recommendation:** **Option B (`pgsty/silo`, pinned by digest)**. It is the only option that pulls anonymously today and keeps MinIO's exact behavior and configuration surface, so the brief's "MinIO locally" setup holds with a different image. Option C stays the documented exit path if the fork stops being maintained.
 
-**Decision:** _[pending]_
+**Decision:** B (`pgsty/silo` pinned by digest)
 
 ---
 
@@ -138,7 +142,9 @@ _Installed stack checked (`nestjs-project/package-lock.json`):_ `@nestjs/common`
 
 **Recommendation:** **Option A (presigned S3 multipart)**. It is the only option in which the API never carries video bytes, which is what "sem impacto na performance" requires. It reuses TD-02's client and matches the diagram, where clients reach storage directly. Server-side `ListParts` keeps the client contract to "upload parts, then call complete".
 
-**Decision:** _[pending]_
+**Decision:** A (Presigned S3 multipart, direct to storage)
+
+**Libraries:** `@aws-sdk/client-s3@^3.1169.0`, `@aws-sdk/s3-request-presigner@^3.1169.0`
 
 ---
 
@@ -169,7 +175,7 @@ _Installed stack checked (`nestjs-project/package-lock.json`):_ `@nestjs/common`
 
 **Recommendation:** **Option A (separate service, same codebase)**. It gets the isolation the diagram asks for without duplicating the domain model, and it scales horizontally through Compose.
 
-**Decision:** _[pending]_
+**Decision:** A (Separate Compose service, same codebase)
 
 ---
 
@@ -202,7 +208,7 @@ _Installed stack checked (`nestjs-project/package-lock.json`):_ `@nestjs/common`
 
 **Recommendation:** **Option B (spawn system ffprobe/ffmpeg)**. It avoids a deprecated, archived dependency, relies on FFmpeg's stable CLI and JSON contract, and keeps the integration small and testable against the real binary in the container.
 
-**Decision:** _[pending]_
+**Decision:** B (Spawn system ffprobe/ffmpeg)
 
 ---
 
@@ -233,7 +239,7 @@ _Installed stack checked (`nestjs-project/package-lock.json`):_ `@nestjs/common`
 
 **Recommendation:** **Option C**. The database constraint turns "sem conflito" into a hard guarantee, the id is short and opaque, and it avoids an ESM-only dependency in a CommonJS build.
 
-**Decision:** _[pending]_
+**Decision:** C (`node:crypto` id + unique constraint + retry)
 
 ---
 
@@ -264,7 +270,9 @@ _Installed stack checked (`nestjs-project/package-lock.json`):_ `@nestjs/common`
 
 **Recommendation:** **Option C (JSON presigned URLs)**. It is the only option that works with the bearer-header contract inherited from Phase 02 while keeping playback bytes off the API, as the diagram prescribes. Range/206 comes from S3 itself.
 
-**Decision:** _[pending]_
+**Decision:** C (JSON presigned URLs)
+
+**Libraries:** `@aws-sdk/s3-request-presigner@^3.1169.0`
 
 ---
 
@@ -290,7 +298,7 @@ _Installed stack checked (`nestjs-project/package-lock.json`):_ `@nestjs/common`
 
 **Recommendation:** **Option A (owner-only, 404 for others)**. It is the conservative default while publishing does not exist, and it lets Phase 04 add visibility rules without breaking expectations created here.
 
-**Decision:** _[pending]_
+**Decision:** A (Owner-only, 404 for others)
 
 ---
 
@@ -321,7 +329,9 @@ _Installed stack checked (`nestjs-project/package-lock.json`):_ `@nestjs/common`
 
 **Recommendation:** **Option A**. The four-state enum is exactly what the brief asks for (rascunho → processando → pronto/erro), TD-01 provides retries, and permanent failures become visible in the same row without extra tables.
 
-**Decision:** _[pending]_
+**Decision:** A (Status enum + queue retries, `failed` terminal)
+
+**Libraries:** `bullmq@^6.7.6`
 
 ---
 
@@ -352,7 +362,7 @@ _Installed stack checked (`nestjs-project/package-lock.json`):_ `@nestjs/common`
 
 **Recommendation:** **Option B**. It is the only option that keeps the "service name as host" rule for server traffic and still produces presigned URLs a client can actually reach. Defaulting the public endpoint to the internal one keeps local tests and the worker working without extra configuration.
 
-**Decision:** _[pending]_
+**Decision:** B (Internal endpoint + public presign endpoint)
 
 ---
 
@@ -383,7 +393,9 @@ _Installed stack checked (`nestjs-project/package-lock.json`):_ `@nestjs/common`
 
 **Recommendation:** **Option B (worker sweep after 24h, `failed` + `upload_abandoned`)**. It gives drafts the defined end state this phase is missing, works identically on the local storage and on AWS S3, and reuses the queue/worker infrastructure instead of depending on a bucket rule the local storage rejects. The 24h threshold matches the storage's default stale-upload expiry.
 
-**Decision:** _[pending]_
+**Decision:** B (Worker sweep after 24h → `failed`)
+
+**Libraries:** `bullmq@^6.7.6`
 
 ---
 
@@ -391,15 +403,15 @@ _Installed stack checked (`nestjs-project/package-lock.json`):_ `@nestjs/common`
 
 | ID | Scope | Decision | Recommendation | Choice |
 |----|-------|----------|---------------|--------|
-| TD-01 | Backend | Message Queue Technology | BullMQ + Redis | _[pending]_ |
-| TD-02 | Backend | Object Storage Client and Key Layout | AWS SDK v3, single bucket `videos/{videoId}/…` | _[pending]_ |
-| TD-03 | Repo-wide | Local S3-Compatible Storage Image | `pgsty/silo` (MinIO fork) pinned by digest | _[pending]_ |
-| TD-04 | Cross-layer | Large-File (10 GB) Upload Strategy | Presigned S3 multipart, 64 MiB parts, server-side `ListParts` | _[pending]_ |
-| TD-05 | Backend | Worker Deployment Model | Separate Compose service, same codebase | _[pending]_ |
-| TD-06 | Backend | Media Probing and Thumbnail Tooling | Spawn system ffprobe/ffmpeg | _[pending]_ |
-| TD-07 | Backend | Unique Video URL Identifier | `node:crypto` 11-char base64url + unique + retry | _[pending]_ |
-| TD-08 | Cross-layer | Playback and Download Delivery | JSON presigned URLs (storage serves Range/206) | _[pending]_ |
-| TD-09 | Backend | Access Policy for Playback and Download | Owner-only, 404 for others | _[pending]_ |
-| TD-10 | Backend | Video Status Lifecycle and Failure Handling | Status enum + queue retries, `failed` terminal | _[pending]_ |
-| TD-11 | Repo-wide | Storage and Queue Environment Contract | Internal endpoint + public presign endpoint | _[pending]_ |
-| TD-12 | Backend | Abandoned Upload Cleanup Policy | Worker sweep after 24h → `failed` (`upload_abandoned`) | _[pending]_ |
+| TD-01 | Backend | Message Queue Technology | BullMQ + Redis | A (BullMQ + Redis) |
+| TD-02 | Backend | Object Storage Client and Key Layout | AWS SDK v3, single bucket `videos/{videoId}/…` | A (AWS SDK v3) |
+| TD-03 | Repo-wide | Local S3-Compatible Storage Image | `pgsty/silo` (MinIO fork) pinned by digest | B (`pgsty/silo` pinned by digest) |
+| TD-04 | Cross-layer | Large-File (10 GB) Upload Strategy | Presigned S3 multipart, 64 MiB parts, server-side `ListParts` | A (Presigned S3 multipart, direct to storage) |
+| TD-05 | Backend | Worker Deployment Model | Separate Compose service, same codebase | A (Separate Compose service, same codebase) |
+| TD-06 | Backend | Media Probing and Thumbnail Tooling | Spawn system ffprobe/ffmpeg | B (Spawn system ffprobe/ffmpeg) |
+| TD-07 | Backend | Unique Video URL Identifier | `node:crypto` 11-char base64url + unique + retry | C (`node:crypto` id + unique constraint + retry) |
+| TD-08 | Cross-layer | Playback and Download Delivery | JSON presigned URLs (storage serves Range/206) | C (JSON presigned URLs) |
+| TD-09 | Backend | Access Policy for Playback and Download | Owner-only, 404 for others | A (Owner-only, 404 for others) |
+| TD-10 | Backend | Video Status Lifecycle and Failure Handling | Status enum + queue retries, `failed` terminal | A (Status enum + queue retries, `failed` terminal) |
+| TD-11 | Repo-wide | Storage and Queue Environment Contract | Internal endpoint + public presign endpoint | B (Internal endpoint + public presign endpoint) |
+| TD-12 | Backend | Abandoned Upload Cleanup Policy | Worker sweep after 24h → `failed` (`upload_abandoned`) | B (Worker sweep after 24h → `failed`) |
