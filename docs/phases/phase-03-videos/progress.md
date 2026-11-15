@@ -1,7 +1,7 @@
 # phase-03-videos — Progress
 
 **Status:** in_progress
-**SIs:** 8/13 completed
+**SIs:** 9/13 completed
 
 ### SI-03.1 — Infraestrutura base: dependências, FFmpeg, Redis e storage no Compose
 - **Status:** completed
@@ -69,9 +69,11 @@
   - Read endpoints use the same owner-scoped query as uploads, so non-owners get `404` (TD-09); playback/download require `ready` (`409 VIDEO_NOT_READY` otherwise).
 
 ### SI-03.9 — Sonda de mídia: duração, metadados e thumbnail com FFmpeg
-- **Status:** pending
-- **Tests:** —
-- **Observations:** none
+- **Status:** completed
+- **Tests:** 10/10 passing (media-probe.service.spec.ts, media-probe.service.integration-spec.ts — real FFmpeg 5.1 in the container)
+- **Observations:** 
+  - Parsing of ffprobe's JSON is a pure exported function (`parseProbeOutput`), unit-tested with fixtures; the integration test generates a real 2 s `testsrc` clip and checks duration, 320×240, h264/aac, 25 fps and a JPEG thumbnail (magic bytes).
+  - Binaries are invoked with `execFile` and argument arrays (no shell), with timeouts and a raised `maxBuffer` for large ffprobe outputs (TD-06).
 
 ### SI-03.10 — Pipeline de processamento do vídeo
 - **Status:** pending
