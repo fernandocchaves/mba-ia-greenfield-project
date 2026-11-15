@@ -1,7 +1,7 @@
 # phase-03-videos — Progress
 
 **Status:** in_progress
-**SIs:** 9/13 completed
+**SIs:** 10/13 completed
 
 ### SI-03.1 — Infraestrutura base: dependências, FFmpeg, Redis e storage no Compose
 - **Status:** completed
@@ -76,9 +76,12 @@
   - Binaries are invoked with `execFile` and argument arrays (no shell), with timeouts and a raised `maxBuffer` for large ffprobe outputs (TD-06).
 
 ### SI-03.10 — Pipeline de processamento do vídeo
-- **Status:** pending
-- **Tests:** —
-- **Observations:** none
+- **Status:** completed
+- **Tests:** 21 passing in src/video-processing (video-processing.service.spec.ts, video-processing.service.integration-spec.ts + SI-03.9 suites) — real DB, storage and FFmpeg
+- **Observations:** 
+  - The integration test runs the whole pipeline on a generated 2 s clip: the row becomes `ready` with duration≈2 s, 320×240/h264 metadata, `processed_at` and a JPEG thumbnail readable from storage; a second delivery of the same job is skipped.
+  - The `ready` update is conditional on `status = processing` and `markFailed` on `status <> ready`, so a late failure event can never downgrade a processed video (TD-10).
+  - Work files live in a per-video temp dir removed in `finally`, so multi-GB sources don't accumulate on the worker's disk.
 
 ### SI-03.11 — Worker: entrypoint, consumidor da fila e serviço no Compose
 - **Status:** pending
