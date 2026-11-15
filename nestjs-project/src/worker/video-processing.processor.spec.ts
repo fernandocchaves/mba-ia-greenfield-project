@@ -17,6 +17,7 @@ const job = (overrides: Partial<Job> = {}): Job =>
 
 describe('VideoProcessingProcessor (unit)', () => {
   let processing: { process: jest.Mock; markFailed: jest.Mock };
+  let sweeper: { sweep: jest.Mock };
   let processor: VideoProcessingProcessor;
 
   beforeEach(() => {
@@ -24,12 +25,23 @@ describe('VideoProcessingProcessor (unit)', () => {
       process: jest.fn().mockResolvedValue('processed'),
       markFailed: jest.fn().mockResolvedValue(undefined),
     };
-    processor = new VideoProcessingProcessor(processing as never);
+    sweeper = { sweep: jest.fn().mockResolvedValue(2) };
+    processor = new VideoProcessingProcessor(
+      processing as never,
+      sweeper as never,
+    );
   });
 
   it('dispatches process-video jobs to the processing service', async () => {
     await expect(processor.process(job())).resolves.toBe('processed');
     expect(processing.process).toHaveBeenCalledWith('video-1');
+  });
+
+  it('dispatches sweep jobs to the abandoned-upload sweeper', async () => {
+    await expect(
+      processor.process(job({ name: SWEEP_ABANDONED_UPLOADS_JOB, data: {} })),
+    ).resolves.toBe(2);
+    expect(sweeper.sweep).toHaveBeenCalledWith(expect.any(Date));
   });
 
   it('rejects unknown job names without retrying', async () => {

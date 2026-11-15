@@ -1,7 +1,7 @@
 # phase-03-videos — Progress
 
 **Status:** in_progress
-**SIs:** 11/13 completed
+**SIs:** 12/13 completed
 
 ### SI-03.1 — Infraestrutura base: dependências, FFmpeg, Redis e storage no Compose
 - **Status:** completed
@@ -94,9 +94,12 @@
   - The sweep job dispatch was kept out of this SI (it belongs to SI-03.12, which creates the sweeper).
 
 ### SI-03.12 — Varredura de uploads abandonados
-- **Status:** pending
-- **Tests:** —
-- **Observations:** none
+- **Status:** completed
+- **Tests:** 35 passing in src/worker + src/video-processing (abandoned-upload-sweeper.service.integration-spec.ts, worker-scheduler.service.integration-spec.ts, processor dispatch case)
+- **Observations:** 
+  - Sweep verified against real storage: a 25 h old draft becomes `failed`/`upload_abandoned` and its multipart upload disappears; an upload already purged by the storage is tolerated; recent drafts and `ready`/`processing` videos are untouched.
+  - Status change is conditional on `status = draft`, so a draft completed while the sweep runs is not overwritten.
+  - After restarting the Compose `worker`, the scheduler `streamtube:video-processing:repeat:abandoned-upload-sweep` exists in Redis (production prefix); `upsertJobScheduler` kept it single across boots.
 
 ### SI-03.13 — Documentação de IA e Definition of Done
 - **Status:** pending

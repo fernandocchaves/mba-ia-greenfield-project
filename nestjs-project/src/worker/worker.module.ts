@@ -15,6 +15,7 @@ import { VideoProcessingModule } from '../video-processing/video-processing.modu
 import { Video } from '../videos/entities/video.entity';
 import { VIDEO_PROCESSING_QUEUE } from '../videos/videos.constants';
 import { VideoProcessingProcessor } from './video-processing.processor';
+import { WorkerSchedulerService } from './worker-scheduler.service';
 
 /**
  * Root module of the headless video worker (phase-03-videos/TD-05): same code
@@ -40,6 +41,6 @@ import { VideoProcessingProcessor } from './video-processing.processor';
     BullModule.registerQueue({ name: VIDEO_PROCESSING_QUEUE }),
     VideoProcessingModule,
   ],
-  providers: [VideoProcessingProcessor],
+  providers: [VideoProcessingProcessor, WorkerSchedulerService],
 })
 export class WorkerModule {}

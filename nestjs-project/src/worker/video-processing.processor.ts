@@ -1,10 +1,12 @@
 import { OnWorkerEvent, Processor, WorkerHost } from '@nestjs/bullmq';
 import { Logger } from '@nestjs/common';
 import { Job, UnrecoverableError } from 'bullmq';
+import { AbandonedUploadSweeperService } from '../video-processing/abandoned-upload-sweeper.service';
 import { VideoProcessingService } from '../video-processing/video-processing.service';
 import type { ProcessVideoJobData } from '../videos/video-processing.producer';
 import {
   PROCESS_VIDEO_JOB,
+  SWEEP_ABANDONED_UPLOADS_JOB,
   VIDEO_PROCESSING_QUEUE,
 } from '../videos/videos.constants';
 
@@ -26,7 +28,10 @@ export function isFinalFailure(job: Job, error: Error): boolean {
 export class VideoProcessingProcessor extends WorkerHost {
   private readonly logger = new Logger(VideoProcessingProcessor.name);
 
-  constructor(private readonly processingService: VideoProcessingService) {
+  constructor(
+    private readonly processingService: VideoProcessingService,
+    private readonly sweeper: AbandonedUploadSweeperService,
+  ) {
     super();
   }
 
@@ -36,6 +41,8 @@ export class VideoProcessingProcessor extends WorkerHost {
         return this.processingService.process(
           (job.data as ProcessVideoJobData).videoId,
         );
+      case SWEEP_ABANDONED_UPLOADS_JOB:
+        return this.sweeper.sweep(new Date());
       default:
         throw new UnrecoverableError(`Unknown job name "${job.name}"`);
     }
