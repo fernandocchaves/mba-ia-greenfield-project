@@ -17,6 +17,25 @@ services:
       minio:
         condition: service_healthy
 
+  # Video worker (phase-03-videos/TD-05): same image and code as the API, runs the
+  # headless queue consumer. `restart` covers the first boot of a fresh clone,
+  # when node_modules is installed after the containers start.
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    command: npm run start:worker
+    restart: unless-stopped
+    volumes:
+      - .:/home/node/app
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+
   db:
     image: postgres:17
     ports:

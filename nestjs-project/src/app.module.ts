@@ -12,6 +12,7 @@ import queueConfig from './config/queue.config';
 import storageConfig from './config/storage.config';
 import swaggerConfig from './config/swagger.config';
 import { envValidationSchema } from './config/env.validation';
+import { buildTypeOrmOptions } from './database/typeorm-options';
 import { VideosModule } from './videos/videos.module';
 
 @Module({
@@ -33,16 +34,8 @@ import { VideosModule } from './videos/videos.module';
     TypeOrmModule.forRootAsync({
       imports: [ConfigModule],
       inject: [databaseConfig.KEY],
-      useFactory: (dbConfig: ConfigType<typeof databaseConfig>) => ({
-        type: 'postgres',
-        host: dbConfig.host,
-        port: dbConfig.port,
-        username: dbConfig.username,
-        password: dbConfig.password,
-        database: dbConfig.name,
-        autoLoadEntities: true,
-        synchronize: false,
-      }),
+      useFactory: (dbConfig: ConfigType<typeof databaseConfig>) =>
+        buildTypeOrmOptions(dbConfig),
     }),
     AuthModule,
     VideosModule,

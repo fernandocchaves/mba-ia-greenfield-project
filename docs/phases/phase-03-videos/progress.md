@@ -1,7 +1,7 @@
 # phase-03-videos — Progress
 
 **Status:** in_progress
-**SIs:** 10/13 completed
+**SIs:** 11/13 completed
 
 ### SI-03.1 — Infraestrutura base: dependências, FFmpeg, Redis e storage no Compose
 - **Status:** completed
@@ -84,9 +84,14 @@
   - Work files live in a per-video temp dir removed in `finally`, so multi-GB sources don't accumulate on the worker's disk.
 
 ### SI-03.11 — Worker: entrypoint, consumidor da fila e serviço no Compose
-- **Status:** pending
-- **Tests:** —
-- **Observations:** none
+- **Status:** completed
+- **Tests:** 9/9 passing (video-processing.processor.spec.ts, worker.module.integration-spec.ts — boots the real WorkerModule, consumes real jobs on the test-prefixed queue: valid clip → ready, invalid file → failed after a single attempt)
+- **Observations:** 
+  - Compose `worker` service is up (`npm run start:worker`) and logs `Video worker started — consuming the "video-processing" queue`.
+  - `buildTypeOrmOptions` in `src/database/typeorm-options.ts` now feeds both `AppModule` and `WorkerModule` (single source of connection parameters, inherited convention).
+  - The worker registers `Video`, `Channel` and `User` via `forFeature`: `autoLoadEntities` only loads registered entities, and `Video → Channel → User` must all have metadata.
+  - The `worker` service has `restart: unless-stopped`: on a fresh clone the containers start before `npm install` runs inside `nestjs-api`, so the first boot fails (`ts-node: not found`) and recovers once dependencies exist.
+  - The sweep job dispatch was kept out of this SI (it belongs to SI-03.12, which creates the sweeper).
 
 ### SI-03.12 — Varredura de uploads abandonados
 - **Status:** pending
