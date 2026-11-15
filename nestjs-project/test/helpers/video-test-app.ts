@@ -59,3 +59,47 @@ export async function createUserAndLogin(
     .expect(200);
   return (res.body as { access_token: string }).access_token;
 }
+
+export interface ErrorBody {
+  statusCode: number;
+  error: string;
+}
+
+export const validUploadBody = {
+  title: 'My first video',
+  filename: 'first.mp4',
+  contentType: 'video/mp4',
+  sizeBytes: 12,
+};
+
+/** `POST /videos` as the given user (returns the supertest request). */
+export function startUpload(
+  app: INestApplication<App>,
+  token: string,
+  body: Record<string, unknown> = validUploadBody,
+) {
+  return request(app.getHttpServer())
+    .post('/videos')
+    .set('Authorization', `Bearer ${token}`)
+    .send(body);
+}
+
+/** Presigns part 1 and PUTs `body` straight to storage (single-part upload). */
+export async function uploadSinglePart(
+  app: INestApplication<App>,
+  token: string,
+  urlId: string,
+  body: Buffer,
+): Promise<number> {
+  const res = await request(app.getHttpServer())
+    .post(`/videos/${urlId}/upload/parts`)
+    .set('Authorization', `Bearer ${token}`)
+    .send({ partNumbers: [1] })
+    .expect(200);
+  const { parts } = res.body as { parts: { url: string }[] };
+  const put = await fetch(parts[0].url, {
+    method: 'PUT',
+    body: new Uint8Array(body),
+  });
+  return put.status;
+}

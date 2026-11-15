@@ -158,6 +158,9 @@ Entregar o upload de vídeos de até 10GB direto para o object storage (sem pass
 
 ### SI-03.6 — Início do upload: pré-cadastro e URLs das partes
 
+**Route:** POST /videos, POST /videos/:urlId/upload/parts
+**Test Specs:** see `nestjs-project/specs/videos-upload.plan.md`
+
 **Description:** Abre o upload: registra o vídeo como rascunho, cria o multipart no storage e entrega as URLs pré-assinadas das partes, sem que bytes passem pela API.
 
 **Technical actions:**
@@ -174,7 +177,6 @@ Entregar o upload de vídeos de até 10GB direto para o object storage (sem pass
 |----------|-------|-----------|
 | `VideosService` | Unit: limite de tamanho, colisão de `url_id`, abort em falha de persistência, validação de partes | `src/videos/videos.service.spec.ts` |
 | `VideosService` | Integration: rascunho persistido no banco e multipart existente no storage | `src/videos/videos.service.integration-spec.ts` |
-| `VideosController` + DTOs | E2E: `POST /videos` e `POST /videos/:urlId/upload/parts` | `test/videos.e2e-spec.ts` |
 | `VideosModule` | Unit: compilation test | `src/videos/videos.module.spec.ts` |
 
 **Dependencies:** SI-03.3, SI-03.4, SI-03.5
@@ -189,6 +191,9 @@ Entregar o upload de vídeos de até 10GB direto para o object storage (sem pass
 
 ### SI-03.7 — Conclusão do upload e enfileiramento do processamento
 
+**Route:** POST /videos/:urlId/upload/complete
+**Test Specs:** see `nestjs-project/specs/videos-upload-complete.plan.md`
+
 **Description:** Fecha o upload multipart validando as partes no próprio storage, move o vídeo para `processing` e publica o job.
 
 **Technical actions:**
@@ -202,7 +207,6 @@ Entregar o upload de vídeos de até 10GB direto para o object storage (sem pass
 |----------|-------|-----------|
 | `VideosService.completeUpload` | Unit: partes faltando, tamanho divergente, upload expirado, estado inválido | `src/videos/videos.service.spec.ts` |
 | `VideosService.completeUpload` | Integration: multipart real concluído e job publicado na fila de teste | `src/videos/videos.service.integration-spec.ts` |
-| `POST /videos/:urlId/upload/complete` | E2E: fluxo iniciar → PUT pré-assinado → concluir | `test/videos.e2e-spec.ts` |
 
 **Dependencies:** SI-03.6
 
@@ -215,6 +219,9 @@ Entregar o upload de vídeos de até 10GB direto para o object storage (sem pass
 ---
 
 ### SI-03.8 — Consulta, playback (streaming) e download
+
+**Route:** GET /videos/:urlId, GET /videos/:urlId/playback, GET /videos/:urlId/download
+**Test Specs:** see `nestjs-project/specs/videos-read.plan.md`
 
 **Description:** Expõe os dados do vídeo ao dono e entrega URLs pré-assinadas de curta duração para reproduzir em streaming e baixar, com o storage servindo os bytes.
 
@@ -230,7 +237,6 @@ Entregar o upload de vídeos de até 10GB direto para o object storage (sem pass
 |----------|-------|-----------|
 | `VideosService` (leitura) | Unit: dono vs. outro canal, `ready` vs. demais estados | `src/videos/videos.service.spec.ts` |
 | `VideosService` (leitura) | Integration: URL de playback responde `206` a `Range`; URL de download traz `attachment` | `src/videos/videos.service.integration-spec.ts` |
-| Endpoints de leitura | E2E: formas de resposta, 404 e 409 | `test/videos.e2e-spec.ts` |
 
 **Dependencies:** SI-03.6
 

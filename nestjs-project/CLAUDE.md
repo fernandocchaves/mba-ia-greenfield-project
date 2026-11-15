@@ -209,6 +209,7 @@ Video bytes never pass through the API. Status lifecycle (`videos.status`, TD-10
 ### Testing notes
 
 - `test/setup-queue-prefix.ts` (Jest `setupFiles` in both configs) sets `QUEUE_PREFIX=streamtube-test`, so the Compose `worker` (prefix `streamtube`) never consumes jobs created by tests. Queue assertions should still look a job up in every state, not only `waiting`.
+- Endpoint E2E scenarios are specified in `specs/*.plan.md` (one spec per controller SI, authored by `/plan-test-specs`); each spec's `target_file` is its E2E suite: `specs/videos-upload.plan.md` → `test/videos-upload.e2e-spec.ts`, `specs/videos-upload-complete.plan.md` → `test/videos-upload-complete.e2e-spec.ts`, `specs/videos-read.plan.md` → `test/videos-read.e2e-spec.ts`. Scenario names in the spec are the `it()` names in the suite.
 - Storage, Redis and FFmpeg are exercised for real (integration suites under `src/storage`, `src/videos`, `src/video-processing`, `src/worker`); `test/helpers/video-test-app.ts` boots the app and logs in a confirmed user for e2e.
 - `src/database/migrations.integration-spec.ts` drops tables **and** enum types (`verification_tokens_type_enum`, `videos_status_enum`) before re-running migrations.
 
