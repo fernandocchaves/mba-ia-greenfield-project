@@ -1,7 +1,10 @@
 import { QueryFailedError } from 'typeorm';
+import { StorageUploadNotFoundError } from '../storage/storage.errors';
 import { Video, VideoStatus } from './entities/video.entity';
 import {
   InvalidPartNumberException,
+  UploadExpiredException,
+  UploadIncompleteException,
   VideoNotFoundException,
   VideoNotUploadableException,
   VideoTooLargeException,
@@ -28,7 +31,10 @@ describe('VideosService (unit)', () => {
     createMultipartUpload: jest.Mock;
     abortMultipartUpload: jest.Mock;
     presignUploadPart: jest.Mock;
+    listUploadedParts: jest.Mock;
+    completeMultipartUpload: jest.Mock;
   };
+  let producer: { enqueueProcessing: jest.Mock };
   let service: VideosService;
 
   const savedVideo = (call: number): Video =>
@@ -54,11 +60,15 @@ describe('VideosService (unit)', () => {
       presignUploadPart: jest.fn((_k: string, _u: string, n: number) =>
         Promise.resolve(`https://storage/part-${n}`),
       ),
+      listUploadedParts: jest.fn(),
+      completeMultipartUpload: jest.fn().mockResolvedValue(undefined),
     };
+    producer = { enqueueProcessing: jest.fn().mockResolvedValue(undefined) };
     service = new VideosService(
       repo as never,
       channels as never,
       storage as never,
+      producer as never,
     );
   });
 
@@ -170,6 +180,87 @@ describe('VideosService (unit)', () => {
       await expect(
         service.presignUploadParts('u-1', 'abc', [1]),
       ).rejects.toBeInstanceOf(VideoNotUploadableException);
+    });
+  });
+
+  describe('completeUpload', () => {
+    const size = UPLOAD_PART_SIZE_BYTES + 10;
+    const draft = () =>
+      ({
+        id: 'video-1',
+        url_id: 'abc',
+        status: VideoStatus.DRAFT,
+        size_bytes: size,
+        storage_key: 'videos/video-1/source',
+        upload_id: 'upload-1',
+      }) as Video;
+    const fullParts = [
+      { partNumber: 1, eTag: '"a"', size: UPLOAD_PART_SIZE_BYTES },
+      { partNumber: 2, eTag: '"b"', size: 10 },
+    ];
+
+    it('completes with the parts listed by storage, marks processing and enqueues once', async () => {
+      repo.findOne.mockResolvedValue(draft());
+      storage.listUploadedParts.mockResolvedValue(fullParts);
+
+      const result = await service.completeUpload('u-1', 'abc');
+
+      expect(storage.completeMultipartUpload).toHaveBeenCalledWith(
+        'videos/video-1/source',
+        'upload-1',
+        fullParts,
+      );
+      const saved = savedVideo(0);
+      expect(saved.status).toBe(VideoStatus.PROCESSING);
+      expect(saved.upload_id).toBeNull();
+      expect(producer.enqueueProcessing).toHaveBeenCalledWith('video-1');
+      expect(result).toEqual({ urlId: 'abc', status: VideoStatus.PROCESSING });
+    });
+
+    it('rejects an upload with a missing part', async () => {
+      repo.findOne.mockResolvedValue(draft());
+      storage.listUploadedParts.mockResolvedValue([fullParts[0]]);
+
+      await expect(service.completeUpload('u-1', 'abc')).rejects.toBeInstanceOf(
+        UploadIncompleteException,
+      );
+      expect(storage.completeMultipartUpload).not.toHaveBeenCalled();
+      expect(producer.enqueueProcessing).not.toHaveBeenCalled();
+    });
+
+    it('rejects an upload whose size differs from the declared size', async () => {
+      repo.findOne.mockResolvedValue(draft());
+      storage.listUploadedParts.mockResolvedValue([
+        fullParts[0],
+        { ...fullParts[1], size: 9 },
+      ]);
+
+      await expect(service.completeUpload('u-1', 'abc')).rejects.toBeInstanceOf(
+        UploadIncompleteException,
+      );
+    });
+
+    it('maps a multipart upload missing in storage to UPLOAD_EXPIRED', async () => {
+      repo.findOne.mockResolvedValue(draft());
+      storage.listUploadedParts.mockRejectedValue(
+        new StorageUploadNotFoundError('videos/video-1/source'),
+      );
+
+      await expect(service.completeUpload('u-1', 'abc')).rejects.toBeInstanceOf(
+        UploadExpiredException,
+      );
+    });
+
+    it('rejects videos that are no longer drafts', async () => {
+      repo.findOne.mockResolvedValue({
+        ...draft(),
+        status: VideoStatus.PROCESSING,
+        upload_id: null,
+      });
+
+      await expect(service.completeUpload('u-1', 'abc')).rejects.toBeInstanceOf(
+        VideoNotUploadableException,
+      );
     });
   });
 });

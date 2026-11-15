@@ -20,6 +20,7 @@ import { InitiateUploadDto } from './dto/initiate-upload.dto';
 import { PresignPartsDto } from './dto/presign-parts.dto';
 import { VideosService } from './videos.service';
 import type {
+  CompleteUploadResult,
   InitiateUploadResult,
   PresignedPartsResult,
 } from './videos.types';
@@ -130,5 +131,45 @@ export class VideosController {
       urlId,
       dto.partNumbers,
     );
+  }
+
+  @Post(':urlId/upload/complete')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Complete a video upload',
+    description:
+      'Verifies the uploaded parts directly in object storage, completes the multipart upload, moves the video to `processing` and enqueues it for the video worker.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Upload completed; processing enqueued',
+    schema: {
+      properties: {
+        urlId: { type: 'string' },
+        status: { type: 'string', enum: ['processing'] },
+      },
+    },
+  })
+  @ApiResponse({
+    status: 401,
+    description: 'Missing or invalid access token',
+    schema: errorSchema,
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Video not found (VIDEO_NOT_FOUND)',
+    schema: errorSchema,
+  })
+  @ApiResponse({
+    status: 409,
+    description:
+      'Not a draft (VIDEO_NOT_UPLOADABLE), parts missing or size mismatch (UPLOAD_INCOMPLETE), or the multipart upload no longer exists (UPLOAD_EXPIRED)',
+    schema: errorSchema,
+  })
+  completeUpload(
+    @CurrentUser() user: JwtPayload,
+    @Param('urlId') urlId: string,
+  ): Promise<CompleteUploadResult> {
+    return this.videosService.completeUpload(user.sub, urlId);
   }
 }

@@ -17,3 +17,8 @@ export interface PresignedPartsResult {
   parts: PresignedPart[];
   expiresAt: string;
 }
+
+export interface CompleteUploadResult {
+  urlId: string;
+  status: VideoStatus;
+}

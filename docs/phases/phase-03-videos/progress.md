@@ -1,7 +1,7 @@
 # phase-03-videos — Progress
 
 **Status:** in_progress
-**SIs:** 6/13 completed
+**SIs:** 7/13 completed
 
 ### SI-03.1 — Infraestrutura base: dependências, FFmpeg, Redis e storage no Compose
 - **Status:** completed
@@ -54,9 +54,12 @@
   - Owner check is a single query (`url_id` + `channel.user_id`), so non-owners get `404 VIDEO_NOT_FOUND` without a separate existence lookup (TD-09).
 
 ### SI-03.7 — Conclusão do upload e enfileiramento do processamento
-- **Status:** pending
-- **Tests:** —
-- **Observations:** none
+- **Status:** completed
+- **Tests:** 38 passing in the video suites — 28 unit/integration (videos.service.spec.ts, videos.service.integration-spec.ts, videos.module.spec.ts, producer) + 10 e2e (test/videos.e2e-spec.ts)
+- **Observations:** 
+  - Completion validates parts against storage (`ListParts`): parts 1..N present, exact count, sum equals the declared `size_bytes`; client-sent ETags are never trusted (TD-04).
+  - Order of effects: complete multipart → save `processing` → enqueue. Enqueue is idempotent (`jobId = videoId`). If Redis were down after the save, the video would stay `processing` with no job; re-publishing it is an operational action, not part of this phase's scope.
+  - e2e assertion looks the job up in every queue state, so it doesn't depend on whether a worker consumes it (lesson from the reference review).
 
 ### SI-03.8 — Consulta, playback (streaming) e download
 - **Status:** pending

@@ -1,6 +1,8 @@
+import { getQueueToken } from '@nestjs/bullmq';
 import { ConfigModule } from '@nestjs/config';
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken, TypeOrmModule } from '@nestjs/typeorm';
+import { Queue } from 'bullmq';
 import { DataSource, Repository } from 'typeorm';
 import { RefreshToken } from '../auth/entities/refresh-token.entity';
 import { VerificationToken } from '../auth/entities/verification-token.entity';
@@ -15,6 +17,7 @@ import {
 } from '../test/create-test-data-source';
 import { User } from '../users/entities/user.entity';
 import { Video, VideoStatus } from './entities/video.entity';
+import { PROCESS_VIDEO_JOB, VIDEO_PROCESSING_QUEUE } from './videos.constants';
 import { VideosModule } from './videos.module';
 import { VideosService } from './videos.service';
 
@@ -26,6 +29,7 @@ describe('VideosService (integration — real DB + storage)', () => {
   let storage: StorageService;
   let videoRepository: Repository<Video>;
   let dataSource: DataSource;
+  let queue: Queue;
 
   beforeAll(async () => {
     module = await Test.createTestingModule({
@@ -43,6 +47,7 @@ describe('VideosService (integration — real DB + storage)', () => {
     storage = module.get(StorageService);
     videoRepository = module.get(getRepositoryToken(Video));
     dataSource = module.get(DataSource);
+    queue = module.get<Queue>(getQueueToken(VIDEO_PROCESSING_QUEUE));
   });
 
   afterAll(async () => {
@@ -51,6 +56,7 @@ describe('VideosService (integration — real DB + storage)', () => {
 
   beforeEach(async () => {
     await cleanAllTables(dataSource);
+    await queue.obliterate({ force: true });
   });
 
   let counter = 0;
@@ -108,5 +114,52 @@ describe('VideosService (integration — real DB + storage)', () => {
     expect(uploaded).toEqual([
       expect.objectContaining({ partNumber: 1, size: 12 }),
     ]);
+  });
+
+  it('completeUpload assembles the object in storage, marks processing and enqueues a job', async () => {
+    const owner = await createOwner();
+    const body = Buffer.from('hello world!');
+    const { urlId } = await service.initiateUpload(owner.id, {
+      title: 'Clip',
+      filename: 'clip.mp4',
+      contentType: 'video/mp4',
+      sizeBytes: body.length,
+    });
+    const { parts } = await service.presignUploadParts(owner.id, urlId, [1]);
+    await fetch(parts[0].url, { method: 'PUT', body: new Uint8Array(body) });
+
+    const result = await service.completeUpload(owner.id, urlId);
+
+    expect(result.status).toBe(VideoStatus.PROCESSING);
+    const video = await videoRepository.findOneByOrFail({ url_id: urlId });
+    expect(video.status).toBe(VideoStatus.PROCESSING);
+    expect(video.upload_id).toBeNull();
+
+    const url = await storage.presignGetObject(video.storage_key, {
+      expiresInSeconds: 60,
+    });
+    expect(await (await fetch(url)).text()).toBe('hello world!');
+
+    const job = await queue.getJob(video.id);
+    expect(job?.name).toBe(PROCESS_VIDEO_JOB);
+    expect(job?.data).toEqual({ videoId: video.id });
+  });
+
+  it('completeUpload rejects when no part was uploaded and keeps the draft', async () => {
+    const owner = await createOwner();
+    const { urlId } = await service.initiateUpload(owner.id, {
+      title: 'Clip',
+      filename: 'clip.mp4',
+      contentType: 'video/mp4',
+      sizeBytes: 12,
+    });
+
+    await expect(service.completeUpload(owner.id, urlId)).rejects.toMatchObject(
+      {
+        errorCode: 'UPLOAD_INCOMPLETE',
+      },
+    );
+    const video = await videoRepository.findOneByOrFail({ url_id: urlId });
+    expect(video.status).toBe(VideoStatus.DRAFT);
   });
 });

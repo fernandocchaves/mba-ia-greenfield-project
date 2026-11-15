@@ -1,9 +1,12 @@
+import { getQueueToken } from '@nestjs/bullmq';
 import { INestApplication } from '@nestjs/common';
+import { Queue } from 'bullmq';
 import request from 'supertest';
 import { App } from 'supertest/types';
 import { DataSource } from 'typeorm';
 import { cleanAllTables } from '../src/test/create-test-data-source';
 import { Video, VideoStatus } from '../src/videos/entities/video.entity';
+import { VIDEO_PROCESSING_QUEUE } from '../src/videos/videos.constants';
 import {
   clearThrottling,
   createUserAndLogin,
@@ -18,6 +21,7 @@ interface ErrorBody {
 describe('Videos (e2e)', () => {
   let app: INestApplication<App>;
   let dataSource: DataSource;
+  let queue: Queue;
 
   const validBody = {
     title: 'My first video',
@@ -29,6 +33,7 @@ describe('Videos (e2e)', () => {
   beforeAll(async () => {
     app = await createVideoTestApp();
     dataSource = app.get(DataSource);
+    queue = app.get<Queue>(getQueueToken(VIDEO_PROCESSING_QUEUE));
   });
 
   afterAll(async () => {
@@ -37,6 +42,7 @@ describe('Videos (e2e)', () => {
 
   beforeEach(async () => {
     await cleanAllTables(dataSource);
+    await queue.obliterate({ force: true });
     clearThrottling(app);
   });
 
@@ -143,6 +149,82 @@ describe('Videos (e2e)', () => {
         .send({ partNumbers: [2] })
         .expect(400);
       expect((res.body as ErrorBody).error).toBe('INVALID_PART_NUMBER');
+    });
+  });
+
+  describe('POST /videos/:urlId/upload/complete', () => {
+    async function uploadAllParts(token: string, urlId: string, body: Buffer) {
+      const res = await http()
+        .post(`/videos/${urlId}/upload/parts`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ partNumbers: [1] })
+        .expect(200);
+      const { parts } = res.body as { parts: { url: string }[] };
+      const put = await fetch(parts[0].url, {
+        method: 'PUT',
+        body: new Uint8Array(body),
+      });
+      expect(put.status).toBe(200);
+    }
+
+    it('completes the upload directly sent to storage, marks processing and enqueues one job', async () => {
+      const token = await createUserAndLogin(app, 'complete@example.com');
+      const { urlId } = (await initiate(token).expect(201)).body as {
+        urlId: string;
+      };
+      await uploadAllParts(token, urlId, Buffer.from('hello world!'));
+
+      const res = await http()
+        .post(`/videos/${urlId}/upload/complete`)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      expect(res.body).toEqual({ urlId, status: 'processing' });
+      const video = await dataSource
+        .getRepository(Video)
+        .findOneByOrFail({ url_id: urlId });
+      expect(video.status).toBe(VideoStatus.PROCESSING);
+      // Look the job up in every state: it is never consumed here (isolated test
+      // prefix), but the assertion must not depend on that.
+      const jobs = await queue.getJobs([
+        'waiting',
+        'active',
+        'delayed',
+        'completed',
+        'failed',
+      ]);
+      expect(jobs.filter((j) => j.id === video.id)).toHaveLength(1);
+    });
+
+    it('returns 409 UPLOAD_INCOMPLETE when parts are missing', async () => {
+      const token = await createUserAndLogin(app, 'missing@example.com');
+      const { urlId } = (await initiate(token).expect(201)).body as {
+        urlId: string;
+      };
+
+      const res = await http()
+        .post(`/videos/${urlId}/upload/complete`)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(409);
+      expect((res.body as ErrorBody).error).toBe('UPLOAD_INCOMPLETE');
+    });
+
+    it('returns 409 VIDEO_NOT_UPLOADABLE when completing twice', async () => {
+      const token = await createUserAndLogin(app, 'twice@example.com');
+      const { urlId } = (await initiate(token).expect(201)).body as {
+        urlId: string;
+      };
+      await uploadAllParts(token, urlId, Buffer.from('hello world!'));
+      await http()
+        .post(`/videos/${urlId}/upload/complete`)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      const res = await http()
+        .post(`/videos/${urlId}/upload/complete`)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(409);
+      expect((res.body as ErrorBody).error).toBe('VIDEO_NOT_UPLOADABLE');
     });
   });
 });
