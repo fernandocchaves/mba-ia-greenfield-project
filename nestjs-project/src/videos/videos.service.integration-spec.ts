@@ -1,4 +1,5 @@
 import { getQueueToken } from '@nestjs/bullmq';
+import { randomUUID } from 'node:crypto';
 import { ConfigModule } from '@nestjs/config';
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken, TypeOrmModule } from '@nestjs/typeorm';
@@ -161,5 +162,56 @@ describe('VideosService (integration — real DB + storage)', () => {
     );
     const video = await videoRepository.findOneByOrFail({ url_id: urlId });
     expect(video.status).toBe(VideoStatus.DRAFT);
+  });
+
+  async function createReadyVideo(owner: User, body: Buffer): Promise<Video> {
+    const channel = await module.get(ChannelsService).findByUserId(owner.id);
+    const id = randomUUID();
+    const key = `videos/${id}/source`;
+    await storage.putObject(key, body, 'video/mp4');
+    return videoRepository.save(
+      videoRepository.create({
+        id,
+        url_id: id.replace(/-/g, '').slice(0, 11),
+        channel_id: channel!.id,
+        title: 'Ready clip',
+        status: VideoStatus.READY,
+        original_filename: 'ready clip.mp4',
+        content_type: 'video/mp4',
+        size_bytes: body.length,
+        storage_key: key,
+        upload_id: null,
+        processed_at: new Date(),
+      }),
+    );
+  }
+
+  it('playback URL streams: storage answers Range with 206 Partial Content', async () => {
+    const owner = await createOwner();
+    const video = await createReadyVideo(
+      owner,
+      Buffer.from('0123456789abcdefghij'),
+    );
+
+    const { url } = await service.getPlaybackUrl(owner.id, video.url_id);
+    const res = await fetch(url, { headers: { Range: 'bytes=5-9' } });
+
+    expect(res.status).toBe(206);
+    expect(res.headers.get('content-range')).toBe('bytes 5-9/20');
+    expect(await res.text()).toBe('56789');
+  });
+
+  it('download URL is served as an attachment named after the original file', async () => {
+    const owner = await createOwner();
+    const video = await createReadyVideo(owner, Buffer.from('download me'));
+
+    const { url } = await service.getDownloadUrl(owner.id, video.url_id);
+    const res = await fetch(url);
+
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-disposition')).toBe(
+      'attachment; filename="ready clip.mp4"',
+    );
+    expect(await res.text()).toBe('download me');
   });
 });

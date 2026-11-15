@@ -1,10 +1,14 @@
+import { randomUUID } from 'node:crypto';
 import { getQueueToken } from '@nestjs/bullmq';
 import { INestApplication } from '@nestjs/common';
 import { Queue } from 'bullmq';
 import request from 'supertest';
 import { App } from 'supertest/types';
 import { DataSource } from 'typeorm';
+import { ChannelsService } from '../src/channels/channels.service';
+import { StorageService } from '../src/storage/storage.service';
 import { cleanAllTables } from '../src/test/create-test-data-source';
+import { User } from '../src/users/entities/user.entity';
 import { Video, VideoStatus } from '../src/videos/entities/video.entity';
 import { VIDEO_PROCESSING_QUEUE } from '../src/videos/videos.constants';
 import {
@@ -225,6 +229,105 @@ describe('Videos (e2e)', () => {
         .set('Authorization', `Bearer ${token}`)
         .expect(409);
       expect((res.body as ErrorBody).error).toBe('VIDEO_NOT_UPLOADABLE');
+    });
+  });
+
+  describe('GET /videos/:urlId, /playback, /download', () => {
+    async function seedReadyVideo(email: string): Promise<string> {
+      const user = await dataSource
+        .getRepository(User)
+        .findOneByOrFail({ email });
+      const channel = await app.get(ChannelsService).findByUserId(user.id);
+      const id = randomUUID();
+      const key = `videos/${id}/source`;
+      await app
+        .get(StorageService)
+        .putObject(key, Buffer.from('0123456789'), 'video/mp4');
+      const video = await dataSource.getRepository(Video).save({
+        id,
+        url_id: id.replace(/-/g, '').slice(0, 11),
+        channel_id: channel!.id,
+        title: 'Ready',
+        status: VideoStatus.READY,
+        original_filename: 'ready.mp4',
+        content_type: 'video/mp4',
+        size_bytes: 10,
+        storage_key: key,
+        upload_id: null,
+        duration_seconds: 1.5,
+        processed_at: new Date(),
+      });
+      return video.url_id;
+    }
+
+    it('GET /videos/:urlId returns the video to its owner and 404 to others', async () => {
+      const token = await createUserAndLogin(app, 'reader@example.com');
+      const other = await createUserAndLogin(app, 'stranger@example.com');
+      const urlId = await seedReadyVideo('reader@example.com');
+
+      const res = await http()
+        .get(`/videos/${urlId}`)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+      expect(res.body).toMatchObject({
+        urlId,
+        title: 'Ready',
+        status: 'ready',
+        sizeBytes: 10,
+        durationSeconds: 1.5,
+        thumbnailUrl: null,
+      });
+
+      const denied = await http()
+        .get(`/videos/${urlId}`)
+        .set('Authorization', `Bearer ${other}`)
+        .expect(404);
+      expect((denied.body as ErrorBody).error).toBe('VIDEO_NOT_FOUND');
+    });
+
+    it('GET /videos/:urlId/playback returns a URL that streams with 206', async () => {
+      const token = await createUserAndLogin(app, 'player@example.com');
+      const urlId = await seedReadyVideo('player@example.com');
+
+      const res = await http()
+        .get(`/videos/${urlId}/playback`)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+      const { url, expiresAt } = res.body as { url: string; expiresAt: string };
+      expect(new Date(expiresAt).getTime()).toBeGreaterThan(Date.now());
+
+      const media = await fetch(url, { headers: { Range: 'bytes=0-3' } });
+      expect(media.status).toBe(206);
+      expect(await media.text()).toBe('0123');
+    });
+
+    it('GET /videos/:urlId/download returns an attachment URL', async () => {
+      const token = await createUserAndLogin(app, 'saver@example.com');
+      const urlId = await seedReadyVideo('saver@example.com');
+
+      const res = await http()
+        .get(`/videos/${urlId}/download`)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+      const media = await fetch((res.body as { url: string }).url);
+      expect(media.headers.get('content-disposition')).toBe(
+        'attachment; filename="ready.mp4"',
+      );
+    });
+
+    it('playback and download return 409 VIDEO_NOT_READY for a draft', async () => {
+      const token = await createUserAndLogin(app, 'early@example.com');
+      const { urlId } = (await initiate(token).expect(201)).body as {
+        urlId: string;
+      };
+
+      for (const path of ['playback', 'download']) {
+        const res = await http()
+          .get(`/videos/${urlId}/${path}`)
+          .set('Authorization', `Bearer ${token}`)
+          .expect(409);
+        expect((res.body as ErrorBody).error).toBe('VIDEO_NOT_READY');
+      }
     });
   });
 });

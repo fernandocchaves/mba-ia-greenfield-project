@@ -14,6 +14,7 @@ import {
   UploadExpiredException,
   UploadIncompleteException,
   VideoNotFoundException,
+  VideoNotReadyException,
   VideoNotUploadableException,
   VideoTooLargeException,
 } from './video.exceptions';
@@ -22,12 +23,15 @@ import {
   MAX_VIDEO_SIZE_BYTES,
   UPLOAD_PART_SIZE_BYTES,
   UPLOAD_PART_URL_TTL_SECONDS,
+  VIDEO_URL_TTL_SECONDS,
   sourceKeyFor,
 } from './videos.constants';
 import type {
   CompleteUploadResult,
   InitiateUploadResult,
   PresignedPartsResult,
+  SignedUrl,
+  VideoDetails,
 } from './videos.types';
 
 const PG_UNIQUE_VIOLATION = '23505';
@@ -197,6 +201,45 @@ export class VideosService {
     return { urlId: video.url_id, status: video.status };
   }
 
+  /** Video details for its owner, with a short-lived thumbnail URL (TD-08, TD-09). */
+  async getVideoDetails(userId: string, urlId: string): Promise<VideoDetails> {
+    const video = await this.findOwnedVideo(userId, urlId);
+    const thumbnailUrl = video.thumbnail_key
+      ? await this.storageService.presignGetObject(video.thumbnail_key, {
+          expiresInSeconds: VIDEO_URL_TTL_SECONDS,
+        })
+      : null;
+    return {
+      urlId: video.url_id,
+      title: video.title,
+      status: video.status,
+      originalFilename: video.original_filename,
+      contentType: video.content_type,
+      sizeBytes: video.size_bytes,
+      durationSeconds: video.duration_seconds,
+      metadata: video.metadata,
+      thumbnailUrl,
+      processingError: video.processing_error,
+      createdAt: video.created_at.toISOString(),
+      processedAt: video.processed_at?.toISOString() ?? null,
+    };
+  }
+
+  /**
+   * Presigned inline GET: the storage serves `Range` → `206 Partial Content`,
+   * which is what makes playback stream without a full download (TD-08).
+   */
+  async getPlaybackUrl(userId: string, urlId: string): Promise<SignedUrl> {
+    const video = await this.getReadyVideo(userId, urlId);
+    return this.signedUrl(video.storage_key);
+  }
+
+  /** Presigned GET answered with `Content-Disposition: attachment` (TD-08). */
+  async getDownloadUrl(userId: string, urlId: string): Promise<SignedUrl> {
+    const video = await this.getReadyVideo(userId, urlId);
+    return this.signedUrl(video.storage_key, video.original_filename);
+  }
+
   /** Owner-only lookup; other users get 404 (phase-03-videos/TD-09). */
   async findOwnedVideo(userId: string, urlId: string): Promise<Video> {
     const video = await this.videoRepository.findOne({
@@ -204,6 +247,26 @@ export class VideosService {
     });
     if (!video) throw new VideoNotFoundException();
     return video;
+  }
+
+  private async getReadyVideo(userId: string, urlId: string): Promise<Video> {
+    const video = await this.findOwnedVideo(userId, urlId);
+    if (video.status !== VideoStatus.READY) throw new VideoNotReadyException();
+    return video;
+  }
+
+  private async signedUrl(
+    key: string,
+    downloadFilename?: string,
+  ): Promise<SignedUrl> {
+    const expiresAt = new Date(
+      Date.now() + VIDEO_URL_TTL_SECONDS * 1000,
+    ).toISOString();
+    const url = await this.storageService.presignGetObject(key, {
+      expiresInSeconds: VIDEO_URL_TTL_SECONDS,
+      downloadFilename,
+    });
+    return { url, expiresAt };
   }
 
   private async getUploadableVideo(

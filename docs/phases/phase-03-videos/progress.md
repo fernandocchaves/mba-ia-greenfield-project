@@ -1,7 +1,7 @@
 # phase-03-videos — Progress
 
 **Status:** in_progress
-**SIs:** 7/13 completed
+**SIs:** 8/13 completed
 
 ### SI-03.1 — Infraestrutura base: dependências, FFmpeg, Redis e storage no Compose
 - **Status:** completed
@@ -62,9 +62,11 @@
   - e2e assertion looks the job up in every queue state, so it doesn't depend on whether a worker consumes it (lesson from the reference review).
 
 ### SI-03.8 — Consulta, playback (streaming) e download
-- **Status:** pending
-- **Tests:** —
-- **Observations:** none
+- **Status:** completed
+- **Tests:** 51 passing in the video suites — 37 unit/integration + 14 e2e (test/videos.e2e-spec.ts)
+- **Observations:** 
+  - Verified end to end on the real storage: the playback URL answers `Range: bytes=0-3` with `206` and only those bytes; the download URL answers with `Content-Disposition: attachment; filename="…"`.
+  - Read endpoints use the same owner-scoped query as uploads, so non-owners get `404` (TD-09); playback/download require `ready` (`409 VIDEO_NOT_READY` otherwise).
 
 ### SI-03.9 — Sonda de mídia: duração, metadados e thumbnail com FFmpeg
 - **Status:** pending

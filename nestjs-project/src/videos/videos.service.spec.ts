@@ -6,6 +6,7 @@ import {
   UploadExpiredException,
   UploadIncompleteException,
   VideoNotFoundException,
+  VideoNotReadyException,
   VideoNotUploadableException,
   VideoTooLargeException,
 } from './video.exceptions';
@@ -31,6 +32,7 @@ describe('VideosService (unit)', () => {
     createMultipartUpload: jest.Mock;
     abortMultipartUpload: jest.Mock;
     presignUploadPart: jest.Mock;
+    presignGetObject: jest.Mock;
     listUploadedParts: jest.Mock;
     completeMultipartUpload: jest.Mock;
   };
@@ -59,6 +61,9 @@ describe('VideosService (unit)', () => {
       abortMultipartUpload: jest.fn().mockResolvedValue(undefined),
       presignUploadPart: jest.fn((_k: string, _u: string, n: number) =>
         Promise.resolve(`https://storage/part-${n}`),
+      ),
+      presignGetObject: jest.fn((key: string) =>
+        Promise.resolve(`https://storage/${key}`),
       ),
       listUploadedParts: jest.fn(),
       completeMultipartUpload: jest.fn().mockResolvedValue(undefined),
@@ -261,6 +266,93 @@ describe('VideosService (unit)', () => {
       await expect(service.completeUpload('u-1', 'abc')).rejects.toBeInstanceOf(
         VideoNotUploadableException,
       );
+    });
+  });
+
+  describe('read endpoints', () => {
+    const ready = () =>
+      ({
+        id: 'video-1',
+        url_id: 'abc',
+        title: 'Clip',
+        status: VideoStatus.READY,
+        original_filename: 'clip.mp4',
+        content_type: 'video/mp4',
+        size_bytes: 42,
+        storage_key: 'videos/video-1/source',
+        thumbnail_key: 'videos/video-1/thumbnail.jpg',
+        duration_seconds: 2.5,
+        metadata: null,
+        processing_error: null,
+        created_at: new Date('2026-11-14T10:00:00Z'),
+        processed_at: new Date('2026-11-14T10:01:00Z'),
+      }) as Video;
+
+    it('getVideoDetails maps the entity and signs the thumbnail', async () => {
+      repo.findOne.mockResolvedValue(ready());
+
+      const details = await service.getVideoDetails('u-1', 'abc');
+
+      expect(details).toMatchObject({
+        urlId: 'abc',
+        status: VideoStatus.READY,
+        sizeBytes: 42,
+        durationSeconds: 2.5,
+        thumbnailUrl: 'https://storage/videos/video-1/thumbnail.jpg',
+        createdAt: '2026-11-14T10:00:00.000Z',
+        processedAt: '2026-11-14T10:01:00.000Z',
+      });
+    });
+
+    it('getVideoDetails returns a null thumbnail before processing', async () => {
+      repo.findOne.mockResolvedValue({
+        ...ready(),
+        status: VideoStatus.DRAFT,
+        thumbnail_key: null,
+        processed_at: null,
+      });
+
+      const details = await service.getVideoDetails('u-1', 'abc');
+      expect(details.thumbnailUrl).toBeNull();
+      expect(storage.presignGetObject).not.toHaveBeenCalled();
+    });
+
+    it('getPlaybackUrl signs an inline GET; getDownloadUrl signs an attachment', async () => {
+      repo.findOne.mockResolvedValue(ready());
+
+      await service.getPlaybackUrl('u-1', 'abc');
+      await service.getDownloadUrl('u-1', 'abc');
+
+      expect(storage.presignGetObject).toHaveBeenNthCalledWith(
+        1,
+        'videos/video-1/source',
+        { expiresInSeconds: 900, downloadFilename: undefined },
+      );
+      expect(storage.presignGetObject).toHaveBeenNthCalledWith(
+        2,
+        'videos/video-1/source',
+        { expiresInSeconds: 900, downloadFilename: 'clip.mp4' },
+      );
+    });
+
+    it.each([VideoStatus.DRAFT, VideoStatus.PROCESSING, VideoStatus.FAILED])(
+      'rejects playback and download while %s',
+      async (status) => {
+        repo.findOne.mockResolvedValue({ ...ready(), status });
+        await expect(
+          service.getPlaybackUrl('u-1', 'abc'),
+        ).rejects.toBeInstanceOf(VideoNotReadyException);
+        await expect(
+          service.getDownloadUrl('u-1', 'abc'),
+        ).rejects.toBeInstanceOf(VideoNotReadyException);
+      },
+    );
+
+    it('returns 404 for videos of other channels', async () => {
+      repo.findOne.mockResolvedValue(null);
+      await expect(
+        service.getVideoDetails('u-2', 'abc'),
+      ).rejects.toBeInstanceOf(VideoNotFoundException);
     });
   });
 });
