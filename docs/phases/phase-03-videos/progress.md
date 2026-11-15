@@ -1,7 +1,7 @@
 # phase-03-videos — Progress
 
 **Status:** in_progress
-**SIs:** 5/13 completed
+**SIs:** 6/13 completed
 
 ### SI-03.1 — Infraestrutura base: dependências, FFmpeg, Redis e storage no Compose
 - **Status:** completed
@@ -46,9 +46,12 @@
   - Domain exceptions live in `src/videos/video.exceptions.ts` (extending the shared `DomainException`), so the videos domain owns its errors instead of growing `common/exceptions/domain.exception.ts`.
 
 ### SI-03.6 — Início do upload: pré-cadastro e URLs das partes
-- **Status:** pending
-- **Tests:** —
-- **Observations:** none
+- **Status:** completed
+- **Tests:** 19 passing — 12 unit/integration (videos.service.spec.ts, videos.service.integration-spec.ts, videos.module.spec.ts) + 7 e2e (test/videos.e2e-spec.ts); full suites: 181/181 unit+integration, 59/59 e2e
+- **Observations:** 
+  - Added `test/helpers/video-test-app.ts` (boots `AppModule` with the `main.ts` pipes/filters; creates a confirmed user + channel in the DB and logs in through the real `/auth/login`), so video e2e tests don't need to mock the mailer like the auth suite does.
+  - `ChannelsService.findByUserId` added to the channels module (channel resolution belongs to its owner module, per the single-responsibility principle in CLAUDE.md).
+  - Owner check is a single query (`url_id` + `channel.user_id`), so non-owners get `404 VIDEO_NOT_FOUND` without a separate existence lookup (TD-09).
 
 ### SI-03.7 — Conclusão do upload e enfileiramento do processamento
 - **Status:** pending
