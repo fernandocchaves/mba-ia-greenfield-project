@@ -12,6 +12,29 @@ services:
         condition: service_healthy
       mailpit:
         condition: service_started
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+
+  # Video worker (phase-03-videos/TD-05): same image and code as the API, runs the
+  # headless queue consumer. `restart` covers the first boot of a fresh clone,
+  # when node_modules is installed after the containers start.
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    command: npm run start:worker
+    restart: unless-stopped
+    volumes:
+      - .:/home/node/app
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
 
   db:
     image: postgres:17
@@ -33,4 +56,35 @@ services:
       - "1025:1025"
       - "8025:8025"
 
+  redis:
+    image: redis:7
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
 
+  # S3-compatible object storage (phase-03-videos/TD-03). The MinIO community images
+  # were removed from Docker Hub (Sep/2026); pgsty/silo is a maintained MinIO fork with
+  # the same S3 API, MINIO_ROOT_* variables and `server` command. Pinned by digest.
+  minio:
+    image: pgsty/silo:RELEASE.2026-09-03T13-18-01Z@sha256:b616a0cf8cb281e7e6bb3c9b1fb53875b4016a2878223925541c18f82d6c5ca3
+    command: server /data --console-address ":9001"
+    environment:
+      - MINIO_ROOT_USER=streamtube
+      - MINIO_ROOT_PASSWORD=streamtube
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  minio-data:
