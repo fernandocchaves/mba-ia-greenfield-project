@@ -48,7 +48,11 @@ _Installed stack checked (`nestjs-project/package-lock.json`):_ `@nestjs/common`
 
 **Decision:** A (BullMQ + Redis)
 
-**Libraries:** `bullmq@^6.7.6`, `@nestjs/bullmq@^12.0.2`
+**Libraries:** `bullmq@^6.7.6`, `@nestjs/bullmq@^11.0.5`, `ioredis@^5.11.1`
+
+**Revisions:**
+- 2026-11-14 — `@nestjs/bullmq` pinned to `^11.0.5` instead of `^12.0.2`. Rationale: the 12.x line is published ESM-only (`"type": "module"`, `export` statements in `dist/index.js`), while this project compiles to CommonJS and runs Jest under ts-jest/CJS, so `@nestjs/bullmq@12` cannot be loaded (`SyntaxError: Unexpected token 'export'` in SI-03.5). 11.0.5 is CommonJS and its peers already accept `bullmq ^6` and `@nestjs/common ^11`, so the decision (BullMQ + Redis) and the bullmq version are unchanged.
+- 2026-11-14 — `ioredis@^5.11.1` added explicitly. Rationale: `bullmq@6` declares `ioredis` as an *optional* peer dependency (`peerDependenciesMeta.ioredis.optional: true`) and fails at runtime with "BullMQ could not load the optional 'ioredis' package" when connection options are passed without it.
 
 ---
 

@@ -3,7 +3,7 @@ kind: phase
 name: phase-03-videos
 sources_mtime:
   docs/project-plan.md: "2026-11-14T18:45:42-03:00"
-  docs/decisions/technical-decisions-phase-03-videos.md: "2026-11-14T19:58:10-03:00"
+  docs/decisions/technical-decisions-phase-03-videos.md: "2026-11-14T23:07:35-03:00"
   docs/phases/phase-01-configuracao-base/context.md: "2026-11-14T18:45:42-03:00"
   docs/phases/phase-02-auth/context.md: "2026-11-14T18:45:42-03:00"
   docs/phases/phase-02-auth-frontend/context.md: "2026-11-14T18:45:42-03:00"
@@ -47,7 +47,7 @@ sources_mtime:
 
 | Ref | Source | Scope | Topic | Status | Decision | Libraries |
 |-----|--------|-------|-------|--------|----------|-----------|
-| phase-03-videos/TD-01 | technical-decisions-phase-03-videos.md | Backend | Message Queue Technology | decided | A (BullMQ + Redis) | `bullmq@^6.7.6`, `@nestjs/bullmq@^12.0.2` |
+| phase-03-videos/TD-01 | technical-decisions-phase-03-videos.md | Backend | Message Queue Technology | decided | A (BullMQ + Redis) | `bullmq@^6.7.6`, `@nestjs/bullmq@^11.0.5`, `ioredis@^5.11.1` |
 | phase-03-videos/TD-02 | technical-decisions-phase-03-videos.md | Backend | Object Storage Client and Key Layout | decided | A (AWS SDK v3) | `@aws-sdk/client-s3@^3.1169.0`, `@aws-sdk/s3-request-presigner@^3.1169.0` |
 | phase-03-videos/TD-03 | technical-decisions-phase-03-videos.md | Repo-wide | Local S3-Compatible Storage Container Image | decided | B (`pgsty/silo` pinned by digest) | — |
 | phase-03-videos/TD-04 | technical-decisions-phase-03-videos.md | Cross-layer | Large-File (10 GB) Upload Strategy | decided | A (Presigned S3 multipart, direct to storage) | `@aws-sdk/client-s3@^3.1169.0`, `@aws-sdk/s3-request-presigner@^3.1169.0` |
@@ -84,7 +84,7 @@ _Source files:_
 
 **Recommendation:** **Option A (BullMQ + Redis)**. Retries with exponential backoff and one-job-per-video deduplication are native features, which is exactly what TD-10 needs. Option B would require building them by hand, and Option C would load the primary database with queue traffic. The extra Redis container is the cost, and it matches the diagram's separate "Message Queue" container.
 
-**Libraries:** `bullmq@^6.7.6`, `@nestjs/bullmq@^12.0.2`
+**Libraries:** `bullmq@^6.7.6`, `@nestjs/bullmq@^11.0.5`, `ioredis@^5.11.1`
 
 ### phase-03-videos/TD-02
 

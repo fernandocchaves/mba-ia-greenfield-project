@@ -5,9 +5,13 @@ libs:
     context7_id: "/taskforcesh/bullmq"
     fetched_at: "2026-11-14T19:56:18-03:00"
   "@nestjs/bullmq":
-    version: "^12.0.2"
+    version: "^11.0.5"
     context7_id: "/websites/nestjs"
     fetched_at: "2026-11-14T19:56:18-03:00"
+  "ioredis":
+    version: "^5.11.1"
+    context7_id: "/taskforcesh/bullmq"
+    fetched_at: "2026-11-14T20:30:00-03:00"
   "@aws-sdk/client-s3":
     version: "^3.1169.0"
     context7_id: "/websites/aws_amazon_awsjavascriptsdk_v3"
@@ -22,7 +26,7 @@ sources_mtime:
 
 # Library References — Phase 03 (Videos)
 
-Distilled from Context7 (library IDs in the frontmatter) and the official pages it cites, restricted to the surfaces the phase-03 TDs use. Compatibility with the installed stack (`@nestjs/common`/`core` 11.1.16, CommonJS build, Node 25 in `Dockerfile.dev`): `@nestjs/bullmq@12.0.2` peers are `@nestjs/common ^10 || ^11 || ^12` and `bullmq ^3 || ^4 || ^5 || ^6`, and both AWS SDK packages require Node ≥ 20.
+Distilled from Context7 (library IDs in the frontmatter) and the official pages it cites, restricted to the surfaces the phase-03 TDs use. Compatibility with the installed stack (`@nestjs/common`/`core` 11.1.16, CommonJS build, Node 25 in `Dockerfile.dev`): `@nestjs/bullmq@11.0.5` peers are `@nestjs/common ^10 || ^11` and `bullmq ^3 || ^4 || ^5 || ^6` (the 12.x line is ESM-only and cannot be loaded by this CommonJS build — see TD-01 Revisions), and both AWS SDK packages require Node ≥ 20.
 
 ### @nestjs/bullmq
 
@@ -37,6 +41,8 @@ Used by phase-03-videos/TD-01, TD-05, TD-10, TD-12.
 ### bullmq
 
 Used by phase-03-videos/TD-01, TD-10, TD-12.
+
+- **Redis client:** `bullmq@6` declares `ioredis` (>=5) as an *optional* peer dependency; with `connection: { host, port }` BullMQ requires it at runtime, so `ioredis` is installed explicitly.
 
 - **Retries:** `queue.add(name, data, { attempts: 3, backoff: { type: 'exponential', delay: 5000 } })`.
 - **Stop retrying:** throw `new UnrecoverableError(message)` (exported by `bullmq`) inside the processor. The job moves to `failed` immediately, overriding `attempts`. Use it for files ffprobe cannot read (TD-10).

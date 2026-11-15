@@ -3,9 +3,9 @@ kind: phase
 name: phase-03-videos
 test_specs_aware: true
 sources_mtime:
-  docs/phases/phase-03-videos/context.md: "2026-11-14T19:58:10-03:00"
-  docs/phases/phase-03-videos/library-refs.md: "2026-11-14T19:56:18-03:00"
-  docs/decisions/technical-decisions-phase-03-videos.md: "2026-11-14T19:58:10-03:00"
+  docs/phases/phase-03-videos/context.md: "2026-11-14T23:07:35-03:00"
+  docs/phases/phase-03-videos/library-refs.md: "2026-11-14T23:07:35-03:00"
+  docs/decisions/technical-decisions-phase-03-videos.md: "2026-11-14T23:07:35-03:00"
 ---
 
 # Phase 03 — Upload e Processamento de Vídeos
@@ -24,7 +24,7 @@ Entregar o upload de vídeos de até 10GB direto para o object storage (sem pass
 
 **Technical actions:**
 
-1. Instalar `bullmq@^6.7.6`, `@nestjs/bullmq@^12.0.2`, `@aws-sdk/client-s3@^3.1169.0` e `@aws-sdk/s3-request-presigner@^3.1169.0` dentro do container (per `phase-03-videos/TD-01`, `phase-03-videos/TD-02`)
+1. Instalar `bullmq@^6.7.6`, `@nestjs/bullmq@^11.0.5` (revisado — ver TD-01 Revisions), `@aws-sdk/client-s3@^3.1169.0` e `@aws-sdk/s3-request-presigner@^3.1169.0` dentro do container (per `phase-03-videos/TD-01`, `phase-03-videos/TD-02`)
 2. Atualizar `nestjs-project/Dockerfile.dev` — `apt install -y procps curl ffmpeg` (per `phase-03-videos/TD-06`)
 3. Adicionar em `nestjs-project/compose.yaml` o serviço `redis` (`redis:7`, healthcheck `redis-cli ping`) e o serviço `minio` com a imagem `pgsty/silo` fixada por digest, `command: server /data --console-address ":9001"`, `MINIO_ROOT_USER`/`MINIO_ROOT_PASSWORD`, portas 9000/9001, volume nomeado `minio-data` e healthcheck `mc ready local`; `nestjs-api.depends_on` passa a incluir ambos como `service_healthy` (per `phase-03-videos/TD-01`, `phase-03-videos/TD-03`)
 4. Corrigir `package.json` → `test:e2e` passa a rodar com `--runInBand` (as suítes e2e compartilham o banco; o `nestjs-project/CLAUDE.md` já declara esse requisito, mas o script não o aplicava)

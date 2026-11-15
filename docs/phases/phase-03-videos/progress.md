@@ -1,7 +1,7 @@
 # phase-03-videos — Progress
 
 **Status:** in_progress
-**SIs:** 4/13 completed
+**SIs:** 5/13 completed
 
 ### SI-03.1 — Infraestrutura base: dependências, FFmpeg, Redis e storage no Compose
 - **Status:** completed
@@ -38,9 +38,12 @@
   - Dev database had drifted (baseline migrations test dropped `migrations` while other suites re-created tables via `synchronize`); reset with `DROP SCHEMA public CASCADE` and `migration:run`, as the migrations rule prescribes.
 
 ### SI-03.5 — Exceções de domínio, módulo de fila e produtor de jobs
-- **Status:** pending
-- **Tests:** —
-- **Observations:** none
+- **Status:** completed
+- **Tests:** 4/4 passing (queue.module.spec.ts, video-processing.producer.integration-spec.ts — real Redis, test prefix)
+- **Observations:** 
+  - `@nestjs/bullmq@12` is published ESM-only and cannot be loaded by this CommonJS build/Jest (`SyntaxError: Unexpected token 'export'`). Pinned `@nestjs/bullmq@^11.0.5` (CommonJS, peers `bullmq ^6` + Nest 11), recorded as a Revision of TD-01 and propagated to library-refs, context, validation and the plan.
+  - `bullmq@6` declares `ioredis` as an *optional* peer and fails at runtime without it; installed `ioredis@^5.11.1` explicitly (TD-01 Libraries + Revision).
+  - Domain exceptions live in `src/videos/video.exceptions.ts` (extending the shared `DomainException`), so the videos domain owns its errors instead of growing `common/exceptions/domain.exception.ts`.
 
 ### SI-03.6 — Início do upload: pré-cadastro e URLs das partes
 - **Status:** pending
