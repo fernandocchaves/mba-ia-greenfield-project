@@ -13,6 +13,9 @@ docker compose ps   # all services must show status "running"
 Then verify each infrastructure service is actually ready to accept connections — not just running:
 
 - **PostgreSQL:** `docker compose exec db pg_isready -U streamtube` — expect `accepting connections`
+- **Redis (queue broker):** `docker compose exec redis redis-cli ping` — expect `PONG`
+- **Object storage:** `docker compose ps minio` — expect `healthy` (healthcheck runs `mc ready local`)
+- **Video worker:** `docker compose logs worker` — expect `Video worker started — consuming the "video-processing" queue`
 
 Only start the NestJS dev server (`npm run start:dev`) when the user **explicitly** asks to run the application — never as part of "start the environment".
 
@@ -34,6 +37,10 @@ docker compose exec nestjs-api npm run start:dev
 Services:
 - `nestjs-api` — NestJS API, port `3000`
 - `db` — PostgreSQL 17, port `5432`, database `streamtube`, user/password `streamtube`
+- `mailpit` — SMTP capture, ports `1025` (SMTP) / `8025` (UI)
+- `redis` — BullMQ broker, port `6379`
+- `minio` — S3-compatible object storage (`pgsty/silo` image), ports `9000` (API) / `9001` (console), user/password `streamtube`
+- `worker` — video worker (`npm run start:worker`), no ports; see "Videos (Phase 03)" below
 
 All verification and teardown commands run on the **host machine**:
 
@@ -159,3 +166,56 @@ NestJS with standard module structure. Source lives in `src/`, compiled output i
 ## REST Conventions
 
 This is a RESTful API. All endpoints must follow standard REST conventions — correct HTTP methods, proper status codes, plural resource nouns, and consistent URL structure. Details are enforced via rules on controller files.
+
+## Videos (Phase 03)
+
+Plan and decisions: `docs/phases/phase-03-videos/phase-03-videos.md`, `docs/decisions/technical-decisions-phase-03-videos.md` (TDs referenced below as `TD-NN`).
+
+### Modules
+
+| Path | Responsibility |
+|------|----------------|
+| `src/storage/` | `StorageModule` / `StorageService` — the only gateway to S3-compatible storage: bucket bootstrap (`onModuleInit`), multipart (`createMultipartUpload`, `presignUploadPart`, `listUploadedParts`, `completeMultipartUpload`, `abortMultipartUpload`), `presignGetObject`, `downloadToFile`, `putObject`. Two `S3Client`s: internal (`STORAGE_ENDPOINT`) for server calls and presigner (`STORAGE_PUBLIC_ENDPOINT`) for URLs handed to clients (TD-11). |
+| `src/queue/` | `QueueModule` — BullMQ root connection + key `prefix`, imported by API and worker (TD-01). |
+| `src/videos/` | HTTP side: `Video` entity, `VideosController`, `VideosService`, `VideoProcessingProducer`, DTOs, domain exceptions (`video.exceptions.ts`), constants (`videos.constants.ts`), `generateUrlId` (`url-id.util.ts`). |
+| `src/video-processing/` | Worker-side domain: `MediaProbeService` (system `ffprobe`/`ffmpeg` via `execFile`, TD-06), `VideoProcessingService` (download → probe → thumbnail → `ready`), `AbandonedUploadSweeperService` (TD-12). |
+| `src/worker/` | `WorkerModule` (headless root), `VideoProcessingProcessor` (queue consumer), `WorkerSchedulerService` (registers the hourly sweep). Entrypoint: `src/main.worker.ts`. |
+| `src/database/typeorm-options.ts` | `buildTypeOrmOptions` — TypeORM options shared by `AppModule` and `WorkerModule`. |
+
+### Endpoints (all require the bearer token; owner-only, others get `404`)
+
+| Method | Path | Effect |
+|--------|------|--------|
+| `POST` | `/videos` | Pre-registers a `draft`, opens a multipart upload; returns `urlId`, `partSize` (64 MiB), `partCount`, `maxPartsPerRequest`. `413 VIDEO_TOO_LARGE` above 10 GiB. |
+| `POST` | `/videos/:urlId/upload/parts` | Body `{ partNumbers }` (≤100) → presigned `UploadPart` URLs (1 h). The client `PUT`s each part **directly to storage**. |
+| `POST` | `/videos/:urlId/upload/complete` | Lists parts in storage, requires parts `1..N` and the exact declared size, completes, sets `processing`, enqueues `process-video`. |
+| `GET` | `/videos/:urlId` | Details + presigned `thumbnailUrl`. |
+| `GET` | `/videos/:urlId/playback` | `{ url, expiresAt }` — presigned GET (15 min); storage answers `Range` with `206` (streaming). `409 VIDEO_NOT_READY` unless `ready`. |
+| `GET` | `/videos/:urlId/download` | `{ url, expiresAt }` — presigned GET served as `attachment` with the original filename. |
+
+Video bytes never pass through the API. Status lifecycle (`videos.status`, TD-10/TD-12): `draft → processing → ready | failed`; drafts older than 24 h become `failed` with `processing_error = 'upload_abandoned'`.
+
+### Queue and worker
+
+- Queue `video-processing`; jobs `process-video` (`{ videoId }`, `jobId = videoId`, 3 attempts, exponential backoff 5 s) and `sweep-abandoned-uploads` (scheduler `abandoned-upload-sweep`, every hour, upserted on worker boot).
+- Invalid media throws `UnrecoverableError` (no retries); on the final failure the processor calls `markFailed`. The `ready` update is conditional on `processing`, and `markFailed` never overwrites `ready`.
+- The worker runs from the same image and code as the API (`worker` service, `npm run start:worker`, ts-node). **It does not hot-reload**: after changing worker code run `docker compose restart worker`.
+- On a fresh clone the `worker` container starts before `npm install`; it restarts (`restart: unless-stopped`) until dependencies exist.
+
+### Environment (`.env.example`, validated in `src/config/env.validation.ts`)
+
+`STORAGE_ENDPOINT` (internal, `http://minio:9000`), `STORAGE_PUBLIC_ENDPOINT` (host embedded in presigned URLs; defaults to `STORAGE_ENDPOINT` — set `http://localhost:9000` when a browser on the host consumes them), `STORAGE_REGION`, `STORAGE_ACCESS_KEY`, `STORAGE_SECRET_KEY`, `STORAGE_BUCKET`, `REDIS_HOST`, `REDIS_PORT`, `QUEUE_PREFIX`.
+
+### Testing notes
+
+- `test/setup-queue-prefix.ts` (Jest `setupFiles` in both configs) sets `QUEUE_PREFIX=streamtube-test`, so the Compose `worker` (prefix `streamtube`) never consumes jobs created by tests. Queue assertions should still look a job up in every state, not only `waiting`.
+- Storage, Redis and FFmpeg are exercised for real (integration suites under `src/storage`, `src/videos`, `src/video-processing`, `src/worker`); `test/helpers/video-test-app.ts` boots the app and logs in a confirmed user for e2e.
+- `src/database/migrations.integration-spec.ts` drops tables **and** enum types (`verification_tokens_type_enum`, `videos_status_enum`) before re-running migrations.
+
+### Gotchas
+
+- Presigned URLs embed the signing host; it cannot be rewritten after signing (SigV4). Use `STORAGE_PUBLIC_ENDPOINT`, never string-replace hosts.
+- `@aws-sdk` ≥ 3.729 adds CRC32 checksums to requests and presigned URLs by default; the clients set `requestChecksumCalculation`/`responseChecksumValidation: 'WHEN_REQUIRED'` so plain `PUT`s to part URLs work on S3-compatible storage.
+- `@nestjs/bullmq` is pinned to 11.x: 12.x is ESM-only and cannot load in this CommonJS build/Jest. `bullmq@6` needs `ioredis` installed explicitly (optional peer).
+- MinIO-family storage rejects the `AbortIncompleteMultipartUpload` lifecycle rule (it purges stale multipart uploads after 24 h itself); abandoned uploads are handled by the worker sweep instead.
+

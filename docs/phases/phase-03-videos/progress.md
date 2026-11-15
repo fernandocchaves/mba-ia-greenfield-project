@@ -1,7 +1,7 @@
 # phase-03-videos — Progress
 
-**Status:** in_progress
-**SIs:** 12/13 completed
+**Status:** completed
+**SIs:** 13/13 completed
 
 ### SI-03.1 — Infraestrutura base: dependências, FFmpeg, Redis e storage no Compose
 - **Status:** completed
@@ -102,6 +102,9 @@
   - After restarting the Compose `worker`, the scheduler `streamtube:video-processing:repeat:abandoned-upload-sweep` exists in Redis (production prefix); `upsertJobScheduler` kept it single across boots.
 
 ### SI-03.13 — Documentação de IA e Definition of Done
-- **Status:** pending
-- **Tests:** —
-- **Observations:** none
+- **Status:** completed
+- **Tests:** no tests of its own (documentation + DoD gate); DoD: 232/232 unit+integration (40 suites), 66/66 e2e (4 suites), `npx tsc --noEmit` exit 0, `npm run lint` 0 errors (40 warnings, rules configured as `warn`), `npm run build` OK
+- **Observations:** 
+  - Baseline lint debt resolved: an ESLint override for `*.spec.ts`/`*.integration-spec.ts`/`*.e2e-spec.ts` turns off the `no-unsafe-*` family and `unbound-method` (supertest bodies and Jest mock internals are `any`; `expect(mock.method)` is idiomatic Jest). Production code stays fully strict. Real fixes in code: `channels.service.ts` (typed QueryFailedError access), `create-test-data-source.ts` (`DataSourceOptions['entities']` instead of `Function`), async mocks without `await`, unused variable/import in two older tests, and `prettier` issues introduced by SI-03.4's `ALL_ENTITIES` edits.
+  - `nestjs-project/CLAUDE.md`: Videos (Phase 03) section plus service list and readiness checks for `redis`, `minio` and `worker`. Every path, identifier, env var, job name and route it cites was checked automatically against the code. Root `CLAUDE.md` and `docs/diagrams/software-arch.mermaid`: queue `TBD` → `BullMQ + Redis`.
+  - Live smoke through the real API (`start:dev`) and the Compose `worker` on the production queue prefix: register → confirm via Mailpit → login → 188 MiB video uploaded as 3 presigned parts straight to storage → complete → `ready` (3 s, 1280×720 h264) with a JPEG thumbnail → playback `Range` → `206` → download byte-identical as `attachment`; 10 GiB pre-registration → 201 (160 parts); 10 GiB + 1 byte → `413 VIDEO_TOO_LARGE`.

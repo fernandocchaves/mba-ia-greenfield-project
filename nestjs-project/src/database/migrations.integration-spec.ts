@@ -19,7 +19,10 @@ const MANAGED_TABLES = [
 
 // `DROP TABLE` does not drop the enum types created by the migrations; leaving
 // them behind makes the next `CREATE TYPE` fail.
-const MANAGED_ENUM_TYPES = ['videos_status_enum', 'verification_tokens_type_enum'];
+const MANAGED_ENUM_TYPES = [
+  'videos_status_enum',
+  'verification_tokens_type_enum',
+];
 
 describe('Database migrations (integration)', () => {
   let dataSource: DataSource;
